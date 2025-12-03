@@ -529,7 +529,7 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
           {/* Loading Spinner and Message */}
           <div className="flex flex-col items-center gap-2 mt-2 mb-6">
             <div className="w-10 h-10 border-4 border-[#0046be]/30 border-t-[#0046be] rounded-full animate-spin mb-2"></div>
-            <span className="text-base text-gray-700 font-medium">Finalizing Your Checkout. This Won't Take Long…</span>
+            <span className="text-base text-gray-700 font-medium">Finalizing Your Checkout. This Won&apos;t Take Long…</span>
           </div>
           {/* Trust Icon Row: Only Secure Checkout */}
         </div>
@@ -795,9 +795,11 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                               Shop with confidence - Your payment information is protected by industry-leading encryption
                             </p>
                             <div className="flex items-center justify-center">
-                              <img 
+                              <Image 
                                 src="/secure-checkout.png" 
                                 alt="Secure Checkout" 
+                                width={48}
+                                height={48}
                                 className="h-12 w-auto"
                               />
                             </div>
@@ -1014,9 +1016,11 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                         Shop with confidence - Your payment information is protected by industry-leading encryption
                       </p>
                       <div className="flex items-center justify-center">
-                        <img 
+                        <Image 
                           src="/secure-checkout.png" 
                           alt="Secure Checkout" 
+                          width={48}
+                          height={48}
                           className="h-12 w-auto"
                         />
                       </div>
