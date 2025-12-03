@@ -945,6 +945,29 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                           onChange={handleInputChange}
                           onFocus={() => setShowStateSuggestions(true)}
                           onBlur={() => setTimeout(() => setShowStateSuggestions(false), 200)}
+                          onKeyDown={(e) => {
+                            if (showStateSuggestions) {
+                              if (e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                setStateSuggestionIndex((prev) => 
+                                  prev < stateSuggestions.length - 1 ? prev + 1 : 0
+                                );
+                              } else if (e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                setStateSuggestionIndex((prev) => 
+                                  prev > 0 ? prev - 1 : stateSuggestions.length - 1
+                                );
+                              } else if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (stateSuggestionIndex >= 0 && stateSuggestionIndex < stateSuggestions.length) {
+                                  handleStateSelect(stateSuggestions[stateSuggestionIndex]);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setShowStateSuggestions(false);
+                                setStateSuggestionIndex(-1);
+                              }
+                            }
+                          }}
                           required
                           className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] transition-all duration-300"
                           placeholder="Enter your state or province"
