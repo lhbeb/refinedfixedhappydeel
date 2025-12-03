@@ -806,11 +806,12 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                               <Image 
                                 src="/secure-checkout.png" 
                                 alt="Secure Checkout" 
-                                width={96}
-                                height={96}
+                                width={192}
+                                height={192}
                                 className="h-12 w-auto"
                                 quality={100}
                                 priority
+                                style={{ imageRendering: 'crisp-edges' }}
                               />
                             </div>
                             <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500 mt-2">
@@ -831,7 +832,6 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                         
                         {/* Continue to Payment Button - Mobile (Sticky) - REMOVED, use the one inside mobile form */}
                       </div>
-                      <div className="lg:hidden h-24"></div>
                     </div>
 
                     {/* Right: Order Summary */}
@@ -1084,11 +1084,12 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                         <Image 
                           src="/secure-checkout.png" 
                           alt="Secure Checkout" 
-                          width={96}
-                          height={96}
+                          width={192}
+                          height={192}
                           className="h-12 w-auto"
                           quality={100}
                           priority
+                          style={{ imageRendering: 'crisp-edges' }}
                         />
                       </div>
                       <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-500 mt-2 px-4">
@@ -1106,7 +1107,6 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                       </div>
                     </div>
                   </form>
-                  <div className="lg:hidden h-24"></div>
                 </div>
               </div>
             </div>
