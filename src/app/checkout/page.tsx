@@ -52,6 +52,7 @@ const CheckoutPage: React.FC = () => {
     email: ''
   });
   const [stateSuggestions, setStateSuggestions] = useState<string[]>([]);
+  const [showMobileOrderSummary, setShowMobileOrderSummary] = useState(false);
   const [showStateSuggestions, setShowStateSuggestions] = useState(false);
   const [stateSuggestionIndex, setStateSuggestionIndex] = useState(-1);
   const stateInputRef = useRef<HTMLInputElement>(null);
@@ -556,6 +557,7 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
               <div className="lg:hidden mb-4">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
                   <button
+                    onClick={() => setShowMobileOrderSummary(!showMobileOrderSummary)}
                     className="w-full p-4 flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-gray-300 rounded-2xl"
                   >
                     <div className="flex items-center space-x-4">
@@ -580,11 +582,16 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                       </div>
                     </div>
                     <div className="flex-shrink-0 ml-3">
-                      <ChevronDown className="h-6 w-6 text-gray-600" />
+                      <ChevronDown 
+                        className={`h-6 w-6 text-gray-600 transition-transform duration-200 ${
+                          showMobileOrderSummary ? 'rotate-180' : ''
+                        }`} 
+                      />
                     </div>
                   </button>
                   
-                  <div className="px-4 pb-4 border-t border-gray-100 mt-4 pt-4">
+                  {showMobileOrderSummary && (
+                    <div className="px-4 pb-4 border-t border-gray-100 mt-4 pt-4">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-gray-600">Quantity</span>
@@ -605,7 +612,8 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                           </div>
                         </div>
                       </div>
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -798,9 +806,11 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                               <Image 
                                 src="/secure-checkout.png" 
                                 alt="Secure Checkout" 
-                                width={48}
-                                height={48}
+                                width={96}
+                                height={96}
                                 className="h-12 w-auto"
+                                quality={100}
+                                priority
                               />
                             </div>
                             <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500 mt-2">
@@ -901,6 +911,61 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                         placeholder="Enter your street address"
                         autoComplete="street-address"
                       />
+                    </div>
+
+                    {/* City */}
+                    <div>
+                      <label htmlFor="city" className="block text-sm font-semibold text-gray-700 mb-3">
+                        City *
+                      </label>
+                      <input
+                        type="text"
+                        id="city"
+                        name="city"
+                        value={shippingData.city}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] transition-all duration-300"
+                        placeholder="Enter your city"
+                        autoComplete="address-level2"
+                      />
+                    </div>
+
+                    {/* State/Province */}
+                    <div className="relative">
+                      <label htmlFor="state" className="block text-sm font-semibold text-gray-700 mb-3">
+                        State/Province *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          id="state"
+                          name="state"
+                          value={shippingData.state}
+                          onChange={handleInputChange}
+                          onFocus={() => setShowStateSuggestions(true)}
+                          onBlur={() => setTimeout(() => setShowStateSuggestions(false), 200)}
+                          required
+                          className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] transition-all duration-300"
+                          placeholder="Enter your state or province"
+                          autoComplete="address-level1"
+                        />
+                        {showStateSuggestions && stateSuggestions.length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {stateSuggestions.map((suggestion, index) => (
+                              <div
+                                key={suggestion}
+                                className={`px-4 py-3 cursor-pointer hover:bg-blue-50 transition-colors ${
+                                  index === stateSuggestionIndex ? 'bg-blue-50' : ''
+                                }`}
+                                onMouseDown={() => handleStateSelect(suggestion)}
+                              >
+                                {suggestion}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -1019,9 +1084,11 @@ const allRegions = [...usStates, ...canadianProvinces, ...ukRegions, ...australi
                         <Image 
                           src="/secure-checkout.png" 
                           alt="Secure Checkout" 
-                          width={48}
-                          height={48}
+                          width={96}
+                          height={96}
                           className="h-12 w-auto"
+                          quality={100}
+                          priority
                         />
                       </div>
                       <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-500 mt-2 px-4">
