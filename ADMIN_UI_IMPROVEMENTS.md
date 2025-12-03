@@ -159,7 +159,7 @@ export default function AdminPage() {
 
 4. ✅ `/admin/products/bulk-import/page.tsx`
    - Replaced header with `<AdminNav title="Bulk Import" />`
-   - Removed back arrow (now automatic)
+   - Removed back arrow w(now automatic)
 
 ---
 
