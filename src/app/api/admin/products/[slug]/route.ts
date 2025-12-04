@@ -36,6 +36,39 @@ function revalidateProductPaths(slug: string) {
   revalidatePath(`/products/${slug}`);
 }
 
+// Helper to get auth from request
+async function getAdminAuth(request: NextRequest) {
+  // Check for admin_token cookie first
+  const token = request.cookies.get('admin_token')?.value;
+  
+  if (token) {
+    // Verify the token with Supabase
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    
+    if (error || !user) {
+      return null;
+    }
+    
+    // Check if user is admin
+    const { isAdmin } = await import('@/lib/supabase/auth');
+    const adminStatus = await isAdmin(user.email || '');
+    if (!adminStatus) {
+      return null;
+    }
+    
+    return token;
+  }
+  
+  // Fallback to Authorization header (for backward compatibility)
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const headerToken = authHeader.split('Bearer ')[1];
+  return headerToken;
+}
+
 // GET - Get single product
 export async function GET(
   request: NextRequest,
@@ -68,6 +101,12 @@ export async function PATCH(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    // Check authentication
+    const auth = await getAdminAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { slug } = await params;
     const existing = await getProductBySlug(slug);
 
@@ -114,6 +153,12 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    // Check authentication
+    const auth = await getAdminAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { slug } = await params;
     const success = await deleteProduct(slug);
 

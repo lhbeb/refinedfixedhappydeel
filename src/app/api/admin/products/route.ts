@@ -41,15 +41,35 @@ function revalidateProductPaths(slug?: string) {
 
 // Helper to get auth from request
 async function getAdminAuth(request: NextRequest) {
+  // Check for admin_token cookie first
+  const token = request.cookies.get('admin_token')?.value;
+  
+  if (token) {
+    // Verify the token with Supabase
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    
+    if (error || !user) {
+      return null;
+    }
+    
+    // Check if user is admin
+    const { isAdmin } = await import('@/lib/supabase/auth');
+    const adminStatus = await isAdmin(user.email || '');
+    if (!adminStatus) {
+      return null;
+    }
+    
+    return token;
+  }
+  
+  // Fallback to Authorization header (for backward compatibility)
   const authHeader = request.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
 
-  const token = authHeader.split('Bearer ')[1];
-  // In production, verify JWT token properly
-  // For now, we'll use a simple session check
-  return token;
+  const headerToken = authHeader.split('Bearer ')[1];
+  return headerToken;
 }
 
 // GET - List all products
@@ -75,11 +95,11 @@ export async function GET(request: NextRequest) {
 // POST - Create new product
 export async function POST(request: NextRequest) {
   try {
-    // Optional: Add auth check here
-    // const auth = await getAdminAuth(request);
-    // if (!auth) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
+    // Check authentication
+    const auth = await getAdminAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const productData = await request.json();
 
