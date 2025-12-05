@@ -79,7 +79,7 @@ export async function POST(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 
-    const newFeaturedStatus = !(product.isFeatured ?? product.is_featured ?? false);
+    const newFeaturedStatus = !(product.isFeatured ?? false);
 
     // If trying to feature a product, check limit
     if (newFeaturedStatus) {
