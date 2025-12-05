@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Package, Mail, MailCheck, MailX, Calendar, DollarSign, User, MapPin, Phone, Search, X, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react';
+import { Package, Mail, MailCheck, MailX, Calendar, DollarSign, User, MapPin, Phone, Search, X, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Trash2, Copy } from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import AdminLoading from '@/components/AdminLoading';
 
@@ -44,6 +44,8 @@ export default function AdminOrdersPage() {
   const [retryingAll, setRetryingAll] = useState(false);
   const [markingConverted, setMarkingConverted] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const itemsPerPage = 20;
 
   useEffect(() => {
@@ -233,9 +235,30 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const handleCopyToClipboard = async (text: string, fieldId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatFullDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-US', {
+      weekday: 'short',
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -427,257 +450,301 @@ export default function AdminOrdersPage() {
           </div>
         </div>
 
-        {/* Orders Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          {filteredOrders.length === 0 && !loading ? (
-            <div className="px-6 py-12 text-center">
-              <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No orders found</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order Date
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Customer
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Product
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Shipping Address
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Price
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Conversion Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedOrders.map((order) => (
-                      <tr 
-                        key={order.id} 
-                        className={`${order.is_converted ? 'bg-green-100 border-l-4 border-green-600 hover:bg-green-200' : 'hover:bg-gray-50'}`}
-                      >
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-sm text-gray-900">
-                            <Calendar className="h-4 w-4 text-gray-400" />
-                            {formatDate(order.created_at)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            <div className="font-medium text-gray-900 flex items-center gap-2">
-                              <User className="h-4 w-4 text-gray-400" />
-                              {order.customer_name}
-                            </div>
-                            <div className="text-gray-500 flex items-center gap-2 mt-1">
-                              <Mail className="h-3 w-3" />
-                              {order.customer_email}
-                            </div>
-                            {order.customer_phone && (
-                              <div className="text-gray-500 flex items-center gap-2 mt-1">
-                                <Phone className="h-3 w-3" />
-                                {order.customer_phone}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            <div className="font-medium text-gray-900">{order.product_title}</div>
-                            <div className="text-gray-500 text-xs mt-1">
-                              <Link 
-                                href={`/products/${order.product_slug}`}
-                                target="_blank"
-                                className="text-[#0046be] hover:underline"
-                              >
-                                View Product
-                              </Link>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm text-gray-900 flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <div>{order.shipping_address}</div>
-                              <div className="text-gray-500">
-                                {order.shipping_city}, {order.shipping_state} {order.shipping_zip}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900 flex items-center gap-1">
-                            <DollarSign className="h-4 w-4 text-green-600" />
-                            {order.product_price.toFixed(2)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                              {getEmailStatusBadge(order)}
-                              {!order.email_sent && (
-                                <button
-                                  onClick={() => handleRetryEmail(order.id)}
-                                  disabled={retryingOrderId === order.id}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Retry sending email"
-                                >
-                                  <RefreshCw className={`h-3 w-3 ${retryingOrderId === order.id ? 'animate-spin' : ''}`} />
-                                  Retry
-                                </button>
-                              )}
-                            </div>
-                            {order.email_error && (
-                              <div className="text-xs text-red-600 max-w-xs" title={order.email_error}>
-                                {order.email_error}
-                              </div>
-                            )}
-                            {order.email_retry_count !== undefined && order.email_retry_count > 0 && (
-                              <div className="text-xs text-gray-500">
-                                Retry attempts: {order.email_retry_count}/5
-                              </div>
-                            )}
-                            {order.next_retry_at && !order.email_sent && (
-                              <div className="text-xs text-gray-500">
-                                Next retry: {formatDate(order.next_retry_at)}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          {order.is_converted ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 border border-green-300">
-                              <CheckCircle2 className="h-4 w-4" />
-                              Converted
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
-                              Lead
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4">
+        {/* Orders List - Card-based layout */}
+        {paginatedOrders.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
+            <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-1">No orders found</h3>
+            <p className="text-gray-500">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {paginatedOrders.map((order) => (
+              <div
+                key={order.id}
+                className={`rounded-2xl shadow-sm border transition-all ${
+                  order.is_converted 
+                    ? 'border-green-300 bg-green-50' 
+                    : 'bg-white border-gray-100 hover:border-gray-200'
+                }`}
+              >
+                {/* Order Header - Always Visible */}
+                <div 
+                  className="p-4 cursor-pointer"
+                  onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    {/* Customer Avatar */}
+                    <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                      {order.customer_name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+
+                    {/* Main Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-gray-900 truncate">
+                          {order.customer_name}
+                        </h3>
+                        {order.is_converted && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Converted
+                          </span>
+                        )}
+                        {order.email_sent ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                            <MailCheck className="h-3 w-3" />
+                            Sent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+                            <MailX className="h-3 w-3" />
+                            Failed
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 truncate mt-0.5">
+                        {order.product_title}
+                      </p>
+                    </div>
+
+                    {/* Price & Date */}
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-bold text-gray-900">${order.product_price.toFixed(2)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(order.created_at)}</p>
+                    </div>
+
+                    {/* Expand Icon */}
+                    <ChevronRight 
+                      className={`h-5 w-5 text-gray-400 transition-transform ${
+                        expandedOrderId === order.id ? 'rotate-90' : ''
+                      }`} 
+                    />
+                  </div>
+                </div>
+
+                {/* Expanded Details */}
+                {expandedOrderId === order.id && (
+                  <div className={`px-4 pb-4 border-t ${order.is_converted ? 'border-green-200' : 'border-gray-100'}`}>
+                    <div className="pt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {/* Customer Details */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                          Customer
+                        </h4>
+                        <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            {!order.is_converted && (
+                            <User className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-700">{order.customer_name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 group">
+                            <Mail className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-700 truncate">{order.customer_email}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyToClipboard(order.customer_email, `email-${order.id}`);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              {copiedField === `email-${order.id}` ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                              )}
+                            </button>
+                          </div>
+                          {order.customer_phone && (
+                            <div className="flex items-center gap-2 group">
+                              <Phone className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-700">{order.customer_phone}</span>
                               <button
-                                onClick={() => handleMarkAsConverted(order.id)}
-                                disabled={markingConverted === order.id}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                                title="Mark as converted"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyToClipboard(order.customer_phone!, `phone-${order.id}`);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
                               >
-                                {markingConverted === order.id ? (
-                                  <>
-                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                    <span>Marking...</span>
-                                  </>
+                                {copiedField === `phone-${order.id}` ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                                 ) : (
-                                  <>
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    <span>Mark as Converted</span>
-                                  </>
+                                  <Copy className="h-4 w-4 text-gray-400 hover:text-gray-600" />
                                 )}
                               </button>
-                            )}
-                            <button
-                              onClick={() => handleDeleteOrder(order.id)}
-                              disabled={deletingOrderId === order.id}
-                              className="inline-flex items-center justify-center p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Delete order"
-                            >
-                              {deletingOrderId === order.id ? (
-                                <RefreshCw className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {filteredOrders.length > itemsPerPage && (
-                <div className="bg-white px-6 py-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-600">
-                      Showing <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> to{' '}
-                      <strong>{Math.min(currentPage * itemsPerPage, filteredOrders.length)}</strong> of{' '}
-                      <strong>{filteredOrders.length}</strong> orders
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                        disabled={currentPage === 1}
-                        className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                        Previous
-                      </button>
-                      
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                          let pageNumber;
-                          if (totalPages <= 5) {
-                            pageNumber = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNumber = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNumber = totalPages - 4 + i;
-                          } else {
-                            pageNumber = currentPage - 2 + i;
-                          }
-                          
-                          return (
-                            <button
-                              key={pageNumber}
-                              onClick={() => setCurrentPage(pageNumber)}
-                              className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                                currentPage === pageNumber
-                                  ? 'bg-[#0046be] text-white'
-                                  : 'border border-gray-300 hover:bg-gray-50 text-gray-700'
-                              }`}
-                            >
-                              {pageNumber}
-                            </button>
-                          );
-                        })}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
+                      {/* Shipping Address */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                          Shipping Address
+                        </h4>
+                        <div className="flex items-start gap-2 group">
+                          <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                          <div className="text-sm text-gray-700">
+                            <p>{order.shipping_address}</p>
+                            <p>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const address = `${order.shipping_address}, ${order.shipping_city}, ${order.shipping_state} ${order.shipping_zip}`;
+                              handleCopyToClipboard(address, `address-${order.id}`);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            {copiedField === `address-${order.id}` ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Copy className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Order Details */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                          Order Details
+                        </h4>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-700">{order.product_title}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <DollarSign className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-900">${order.product_price.toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-700">{formatFullDate(order.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Email Error */}
+                    {!order.email_sent && order.email_error && (
+                      <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">
+                        <p className="text-sm text-red-700">
+                          <span className="font-medium">Email Error:</span> {order.email_error}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-2">
+                      {!order.email_sent && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRetryEmail(order.id);
+                          }}
+                          disabled={retryingOrderId === order.id}
+                          className="inline-flex items-center gap-2 px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 disabled:opacity-50 transition-all"
+                        >
+                          {retryingOrderId === order.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Mail className="h-4 w-4" />
+                          )}
+                          Retry Email
+                        </button>
+                      )}
+
+                      {!order.is_converted && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAsConverted(order.id);
+                          }}
+                          disabled={markingConverted === order.id}
+                          className="inline-flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 disabled:opacity-50 transition-all"
+                        >
+                          {markingConverted === order.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                          Mark Converted
+                        </button>
+                      )}
+
                       <button
-                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={currentPage === totalPages}
-                        className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteOrder(order.id);
+                        }}
+                        disabled={deletingOrderId === order.id}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 disabled:opacity-50 transition-all"
                       >
-                        Next
-                        <ChevronRight className="h-4 w-4" />
+                        {deletingOrderId === order.id ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                        Delete
                       </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`min-w-[40px] h-10 rounded-lg font-medium transition-all ${
+                      currentPage === pageNum
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        )}
     </AdminLayout>
   );
 }
-

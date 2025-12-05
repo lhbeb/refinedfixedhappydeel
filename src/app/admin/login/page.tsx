@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase/client';
+import { Eye, EyeOff, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,130 +18,119 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       });
 
-      if (authError) {
-        // Provide helpful error messages without exposing credentials
-        let errorMessage = authError.message;
-        if (authError.message.includes('Invalid login credentials') || authError.message.includes('invalid')) {
-          errorMessage = 'Invalid email or password. Please verify:\n1. User exists in Supabase Authentication\n2. Email and password are correct\n3. User is confirmed (Auto Confirm was checked when created)';
-        } else if (authError.message.includes('Email not confirmed')) {
-          errorMessage = 'Email not confirmed. Please ensure the user was created with "Auto Confirm User" enabled in Supabase.';
-        }
-        setError(errorMessage);
-        setLoading(false);
-        return;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
       }
 
-      if (data.user) {
-        // Store session token
-        const session = await supabase.auth.getSession();
-        if (session.data.session) {
-          // Store in localStorage for client-side API calls
-          localStorage.setItem('admin_token', session.data.session.access_token);
-          
-          // Set cookie for server-side auth (send token, not password)
-          await fetch('/api/admin/auth', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.data.session.access_token}`
-            },
-            body: JSON.stringify({
-              token: session.data.session.access_token,
-            }),
-          });
-        }
-        router.push('/admin/products');
-      }
+      localStorage.setItem('admin_token', data.token);
+      router.push('/admin/products');
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Admin Login
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Access the admin dashboard
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
+      {/* Background Pattern */}
+      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10"></div>
+      
+      {/* Gradient Orbs */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl"></div>
+
+      <div className="relative w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-2xl shadow-blue-500/30 mb-4">
+            <Lock className="h-8 w-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">Admin Portal</h1>
+          <p className="text-gray-400 mt-1">Sign in to access your dashboard</p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+
+        {/* Login Card */}
+        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl">
           {error && (
-            <div className="rounded-md bg-red-50 p-4 border border-red-200">
-              <div className="text-sm text-red-800 font-semibold mb-2">Login Error</div>
-              <div className="text-sm text-red-700 whitespace-pre-line">{error}</div>
-              <div className="mt-3 pt-3 border-t border-red-200">
-                <div className="text-xs text-red-600">
-                  <strong>Need help?</strong><br />
-                  Verify the user exists in Supabase Authentication and is confirmed. Run <code className="bg-red-100 px-1 rounded">npm run create-admin</code> to automatically create the admin user.
-                </div>
-              </div>
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px">
+
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="email" className="sr-only">
-                Email address
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Username
               </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-[#0046be] focus:border-[#0046be] focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-500" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
+                  required
+                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
             </div>
+
             <div>
-              <label htmlFor="password" className="sr-only">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-[#0046be] focus:border-[#0046be] focus:z-10 sm:text-sm"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-500" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  required
+                  className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div>
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-[#0046be] hover:bg-[#003494] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0046be] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              ) : (
+                <>
+                  Sign In
+                  <ArrowRight className="h-5 w-5" />
+                </>
+              )}
             </button>
-          </div>
-        </form>
-        <div className="text-center">
-          <Link
-            href="/"
-            className="font-medium text-[#0046be] hover:text-[#003494]"
-          >
-            ← Back to home
-          </Link>
+          </form>
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-gray-500 text-sm mt-6">
+          Protected area • Authorized personnel only
+        </p>
       </div>
     </div>
   );
 }
-

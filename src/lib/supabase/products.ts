@@ -239,6 +239,7 @@ export async function createProduct(productData: {
 export async function updateProduct(
   slug: string,
   updates: {
+    slug?: string;
     title?: string;
     description?: string;
     price?: number;
@@ -265,6 +266,13 @@ export async function updateProduct(
     const updateData: any = {
       updated_at: new Date().toISOString(),
     };
+
+    // Handle slug update - must be done before the query
+    if (updates.slug !== undefined && updates.slug !== slug) {
+      updateData.slug = updates.slug;
+      // Also update id if it matches the old slug
+      updateData.id = updates.slug;
+    }
 
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.description !== undefined) updateData.description = updates.description;

@@ -1,302 +1,180 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Plus, Edit, Trash2, ExternalLink, Search, X, ArrowUpDown, ChevronLeft, ChevronRight, Star, DownloadCloud, PackageX, Heart } from 'lucide-react';
-import type { Product } from '@/types/product';
+import { 
+  Package, Search, Plus, Edit, Trash2, ExternalLink, 
+  Filter, Grid3X3, List, MoreVertical, Eye, X,
+  ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Star
+} from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import AdminLoading from '@/components/AdminLoading';
 
+interface Product {
+  id: string;
+  slug: string;
+  title: string;
+  price: number;
+  original_price?: number;
+  images: string[];
+  category?: string;
+  in_stock?: boolean;
+  created_at: string;
+  checkoutLink?: string;
+  isFeatured?: boolean;
+  is_featured?: boolean;
+}
+
+type ViewMode = 'grid' | 'list';
+
 export default function AdminProductsPage() {
-  const FEATURE_LIMIT = 6;
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [paginatedProducts, setPaginatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-  const [priceSort, setPriceSort] = useState<'none' | 'high-to-low' | 'low-to-high'>('none');
+  const [featuredFilter, setFeaturedFilter] = useState<'all' | 'featured' | 'not_featured'>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-  const lastFetchTimeRef = useRef<number>(0);
-  const featuredCount = products.reduce(
-    (count, product) => count + ((product.isFeatured ?? false) ? 1 : 0),
-    0
-  );
-  const featureLimitReached = featuredCount >= FEATURE_LIMIT;
-  const [updatingFeaturedSlug, setUpdatingFeaturedSlug] = useState<string | null>(null);
-  const [updatingSoldOutSlug, setUpdatingSoldOutSlug] = useState<string | null>(null);
-  const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
-  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingFeatured, setTogglingFeatured] = useState<string | null>(null);
+  const [featuredCount, setFeaturedCount] = useState(0);
+  const FEATURE_LIMIT = 6;
+  const itemsPerPage = 12;
 
-  useEffect(() => {
-    fetchProducts();
-    lastFetchTimeRef.current = Date.now();
-  }, []);
-
-  // Only refresh products when page becomes visible if it's been a very long time (5 minutes)
-  // This prevents loss of unsaved changes from aggressive refreshes
-  useEffect(() => {
-    const MIN_REFRESH_INTERVAL = 5 * 60 * 1000; // Only refresh if it's been at least 5 minutes since last fetch
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        const now = Date.now();
-        if (now - lastFetchTimeRef.current >= MIN_REFRESH_INTERVAL) {
-          lastFetchTimeRef.current = now;
-          // Silent refresh without showing loading state
-          fetchProductsSilently();
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/products');
-      if (!response.ok) {
-        throw new Error('Failed to fetch products');
-      }
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch('/api/admin/products', {
+        headers: token ? {
+          'Authorization': `Bearer ${token}`
+        } : {}
+      });
+      if (!response.ok) throw new Error('Failed to fetch products');
       const data = await response.json();
       setProducts(data);
       setFilteredProducts(data);
+      
+      // Count featured products
+      const featured = Array.isArray(data) ? data.filter((p: Product) => p.isFeatured || p.is_featured).length : 0;
+      setFeaturedCount(featured);
     } catch (err) {
       setError('Failed to load products');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Silent fetch that doesn't show loading state (for background refreshes)
-  const fetchProductsSilently = async () => {
-    try {
-      const response = await fetch('/api/admin/products');
-      if (!response.ok) {
-        throw new Error('Failed to fetch products');
-      }
-      const data = await response.json();
-      setProducts(data);
-      setFilteredProducts(data);
-      lastFetchTimeRef.current = Date.now();
-    } catch (err) {
-      // Fail silently for background refreshes
-      console.error('Silent refresh failed:', err);
-    }
-  };
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   useEffect(() => {
     let filtered = [...products];
 
     // Apply search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter((product) => {
-        const title = product.title?.toLowerCase() || '';
-        const brand = product.brand?.toLowerCase() || '';
-        const category = product.category?.toLowerCase() || '';
-        const slug = product.slug?.toLowerCase() || '';
-        const description = product.description?.toLowerCase() || '';
-        
-        return (
-          title.includes(query) ||
-          brand.includes(query) ||
-          category.includes(query) ||
-          slug.includes(query) ||
-          description.includes(query)
-        );
-      });
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.title.toLowerCase().includes(query) ||
+        p.slug.toLowerCase().includes(query) ||
+        p.category?.toLowerCase().includes(query)
+      );
     }
 
-    // Apply price filters
-    if (minPrice.trim()) {
-      const min = parseFloat(minPrice);
-      if (!isNaN(min)) {
-        filtered = filtered.filter((product) => product.price >= min);
-      }
-    }
-
-    if (maxPrice.trim()) {
-      const max = parseFloat(maxPrice);
-      if (!isNaN(max)) {
-        filtered = filtered.filter((product) => product.price <= max);
-      }
-    }
-
-    // Apply price sorting
-    if (priceSort === 'high-to-low') {
-      filtered.sort((a, b) => b.price - a.price);
-    } else if (priceSort === 'low-to-high') {
-      filtered.sort((a, b) => a.price - b.price);
+    // Apply featured filter
+    if (featuredFilter === 'featured') {
+      filtered = filtered.filter(p => p.isFeatured || p.is_featured);
+    } else if (featuredFilter === 'not_featured') {
+      filtered = filtered.filter(p => !(p.isFeatured || p.is_featured));
     }
 
     setFilteredProducts(filtered);
-    // Reset to page 1 when filters change
     setCurrentPage(1);
-  }, [searchQuery, minPrice, maxPrice, priceSort, products]);
-
-  // Pagination effect
-  useEffect(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const paginated = filteredProducts.slice(startIndex, endIndex);
-    setPaginatedProducts(paginated);
-  }, [filteredProducts, currentPage]);
-
-  // Calculate total pages
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  }, [searchQuery, featuredFilter, products]);
 
   const handleDelete = async (slug: string) => {
-    // Find the product to show its title in the confirmation
-    const product = products.find(p => p.slug === slug);
-    const productName = product?.title || slug;
+    if (!confirm('Are you sure you want to delete this product?')) return;
     
-    if (!confirm(`⚠️ Delete Product?\n\nAre you sure you want to permanently delete "${productName}"?\n\nThis action cannot be undone.`)) {
-      return;
-    }
-
-    setDeletingSlug(slug);
-    setError('');
-
+    setDeletingId(slug);
     try {
-      const response = await fetch(`/api/admin/products/${slug}`, {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(`/api/admin/products/${encodeURIComponent(slug)}`, { 
         method: 'DELETE',
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
       });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to delete product');
-      }
-
-      // Update local state instead of refetching everything
-      setProducts((prev) => prev.filter((item) => item.slug !== slug));
-      setFilteredProducts((prev) => prev.filter((item) => item.slug !== slug));
-      
-      // Show success message
-      alert(`✅ Product "${productName}" has been successfully deleted.`);
-      
-      // Reset to page 1 if current page becomes empty
-      if (paginatedProducts.length === 1 && currentPage > 1) {
-        setCurrentPage(currentPage - 1);
-      }
+      if (!response.ok) throw new Error('Failed to delete product');
+      await fetchProducts();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete product';
-      setError(errorMessage);
-      alert(`❌ Error: ${errorMessage}`);
-      console.error('Delete error:', err);
+      setError('Failed to delete product');
     } finally {
-      setDeletingSlug(null);
+      setDeletingId(null);
     }
   };
 
-  const toggleFeatured = async (product: Product) => {
-    if (!product.isFeatured && featuredCount >= FEATURE_LIMIT) {
+  const handleToggleFeatured = async (slug: string) => {
+    const product = products.find(p => p.slug === slug);
+    const isCurrentlyFeatured = product?.isFeatured || product?.is_featured || false;
+    const featureLimitReached = featuredCount >= FEATURE_LIMIT;
+    
+    if (!isCurrentlyFeatured && featureLimitReached) {
       setError(`Maximum of ${FEATURE_LIMIT} featured products reached. Unfeature another product first.`);
       return;
     }
 
-    const nextValue = !product.isFeatured;
-    setUpdatingFeaturedSlug(product.slug);
+    setTogglingFeatured(slug);
     setError('');
 
     try {
-      const response = await fetch(`/api/admin/products/${product.slug}`, {
-        method: 'PATCH',
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(`/api/admin/products/${encodeURIComponent(slug)}/feature`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ is_featured: nextValue, isFeatured: nextValue }),
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update featured status');
+        throw new Error(errorData.error || 'Failed to toggle featured status');
       }
 
-      const updatedProduct: Product = await response.json();
-      setProducts((prev) => prev.map((item) => (item.slug === updatedProduct.slug ? updatedProduct : item)));
-      // filteredProducts will recompute via useEffect on products
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Failed to update featured status');
+      const result = await response.json();
+      
+      // Update local state
+      setProducts(prev => prev.map(p => 
+        p.slug === slug 
+          ? { ...p, isFeatured: result.isFeatured, is_featured: result.isFeatured }
+          : p
+      ));
+      setFilteredProducts(prev => prev.map(p => 
+        p.slug === slug 
+          ? { ...p, isFeatured: result.isFeatured, is_featured: result.isFeatured }
+          : p
+      ));
+      
+      // Update featured count
+      setFeaturedCount(prev => result.isFeatured ? prev + 1 : prev - 1);
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle featured status');
     } finally {
-      setUpdatingFeaturedSlug(null);
+      setTogglingFeatured(null);
     }
   };
 
-  const toggleSoldOut = async (product: Product) => {
-    const nextValue = product.inStock === false ? true : false;
-    setUpdatingSoldOutSlug(product.slug);
-    setError('');
-
-    try {
-      const response = await fetch(`/api/admin/products/${product.slug}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ in_stock: nextValue, inStock: nextValue }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update sold out status');
-      }
-
-      const updatedProduct: Product = await response.json();
-      setProducts((prev) => prev.map((item) => (item.slug === updatedProduct.slug ? updatedProduct : item)));
-      // filteredProducts will recompute via useEffect on products
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Failed to update sold out status');
-    } finally {
-      setUpdatingSoldOutSlug(null);
-    }
-  };
-
-  const handleDownload = async (product: Product) => {
-    setError('');
-    setDownloadingSlug(product.slug);
-    try {
-      const response = await fetch(`/api/admin/products/${product.slug}/download`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to download product data');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${product.slug}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Failed to download product data');
-    } finally {
-      setDownloadingSlug(null);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('admin_token');
-    router.push('/admin/login');
-  };
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   if (loading) {
     return <AdminLoading message="Loading products..." />;
@@ -305,403 +183,363 @@ export default function AdminProductsPage() {
   return (
     <AdminLayout 
       title="Products" 
-      subtitle={`${products.length} products • ${featuredCount} featured`}
+      subtitle={`${products.length} products • ${featuredCount}/${FEATURE_LIMIT} featured`}
     >
+      {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-4 bg-red-50 text-red-800 rounded-lg">{error}</div>
-        )}
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError('')}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
-        {/* Search and Filter Bar */}
-        <div className="bg-white rounded-lg shadow p-4 mb-4">
-          <div className="space-y-4">
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+      {/* Toolbar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search products by title, brand, category, slug..."
+              placeholder="Search products..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] outline-none"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  title="Clear search"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
             </div>
 
-            {/* Smart Price Filter & Manual Price Range */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <ArrowUpDown className="h-4 w-4 inline mr-1" />
-                  Sort by Price
-                </label>
+          {/* Featured Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-gray-400" />
                 <select
-                  value={priceSort}
-                  onChange={(e) => setPriceSort(e.target.value as 'none' | 'high-to-low' | 'low-to-high')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] outline-none bg-white"
-                >
-                  <option value="none">No sorting</option>
-                  <option value="high-to-low">Price: High to Low</option>
-                  <option value="low-to-high">Price: Low to High</option>
+              value={featuredFilter}
+              onChange={(e) => setFeaturedFilter(e.target.value as 'all' | 'featured' | 'not_featured')}
+              className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium"
+            >
+              <option value="all">All Products</option>
+              <option value="featured">⭐ Featured Only</option>
+              <option value="not_featured">Not Featured</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Min Price ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Max Price ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="No limit"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0046be] focus:border-[#0046be] outline-none"
-                />
-              </div>
-              <div className="flex gap-2">
+
+          {/* View Toggle & Actions */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+              >
+                <Grid3X3 className="h-4 w-4 text-gray-600" />
+              </button>
                 <button
-                  onClick={() => {
-                    setMinPrice('');
-                    setMaxPrice('');
-                    setSearchQuery('');
-                    setPriceSort('none');
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700 transition-colors w-full"
-                  title="Clear all filters"
-                >
-                  Clear All
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+              >
+                <List className="h-4 w-4 text-gray-600" />
                 </button>
-              </div>
             </div>
 
-            {/* Filter Status */}
-            {(searchQuery || minPrice || maxPrice || priceSort !== 'none') && (
-              <div className="pt-2 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
-                    Showing <strong>{filteredProducts.length}</strong> of <strong>{products.length}</strong> product{products.length !== 1 ? 's' : ''}
-                    {priceSort !== 'none' && (
-                      <span className="ml-2 text-gray-500">
-                        • Sorted: {priceSort === 'high-to-low' ? 'High to Low' : 'Low to High'}
-                      </span>
-                    )}
-                    {(minPrice || maxPrice) && (
-                      <span className="ml-2 text-gray-500">
-                        {minPrice && `• Min: $${parseFloat(minPrice).toFixed(2)}`}
-                        {maxPrice && ` Max: $${parseFloat(maxPrice).toFixed(2)}`}
-                      </span>
-                    )}
+            <button
+              onClick={fetchProducts}
+              className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4 text-gray-600" />
+            </button>
+
+            <Link
+              href="/admin/products/new"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/25"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="font-medium">Add Product</span>
+            </Link>
                   </div>
                 </div>
               </div>
-            )}
+
+      {/* Filter Status */}
+      {(searchQuery || featuredFilter !== 'all') && (
+        <div className="mb-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+          <div className="text-sm text-blue-700">
+            Showing <strong>{filteredProducts.length}</strong> of <strong>{products.length}</strong> product{products.length !== 1 ? 's' : ''}
+            {featuredFilter === 'featured' && ` (${featuredCount} featured)`}
           </div>
         </div>
+      )}
 
-        {featureLimitReached && (
-          <div className="mb-4 rounded-lg border border-[#f4de40]/30 bg-[#fef9e6] px-4 py-3 text-sm text-[#7a6b0d]">
-            Maximum of {FEATURE_LIMIT} featured products reached. Unfeature an existing product before adding another.
+      {/* Products Grid/List */}
+      {paginatedProducts.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
+          <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-1">No products found</h3>
+          <p className="text-gray-500 mb-4">Get started by adding your first product</p>
+          <Link
+            href="/admin/products/new"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Link>
+        </div>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {paginatedProducts.map((product) => (
+            <div
+              key={product.id}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-md hover:border-gray-200 transition-all"
+            >
+              {/* Image */}
+              <div className="relative aspect-square bg-gray-100">
+                {product.images?.[0] ? (
+                  <Image
+                    src={product.images[0]}
+                    alt={product.title}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <Package className="h-12 w-12 text-gray-300" />
+                  </div>
+                )}
+
+                {/* Featured Badge */}
+                {(product.isFeatured || product.is_featured) && (
+                  <div className="absolute top-2 left-2 px-2 py-1 bg-amber-500 text-white text-xs font-medium rounded-full flex items-center gap-1">
+                    <Star className="h-3 w-3 fill-white" />
+                    Featured
           </div>
         )}
 
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-            {(paginatedProducts.length > 0 && !searchQuery && !minPrice && !maxPrice && priceSort === 'none') && (
-              <div className="px-6 py-3 bg-gray-50 border-b">
-                <div className="text-sm text-gray-600">
-                  Showing <strong>{products.length}</strong> product{products.length !== 1 ? 's' : ''}
+                {/* Quick Actions Overlay */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleToggleFeatured(product.slug);
+                    }}
+                    disabled={togglingFeatured === product.slug || (!(product.isFeatured || product.is_featured) && featuredCount >= FEATURE_LIMIT)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      (product.isFeatured || product.is_featured)
+                        ? 'bg-amber-500 hover:bg-amber-600'
+                        : 'bg-white hover:bg-gray-100'
+                    } disabled:opacity-50`}
+                    title={(product.isFeatured || product.is_featured) ? 'Remove from featured' : 'Add to featured'}
+                  >
+                    {togglingFeatured === product.slug ? (
+                      <RefreshCw className={`h-4 w-4 animate-spin ${(product.isFeatured || product.is_featured) ? 'text-white' : 'text-gray-700'}`} />
+                    ) : (
+                      <Star className={`h-4 w-4 ${(product.isFeatured || product.is_featured) ? 'text-white fill-white' : 'text-gray-700'}`} />
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      router.push(`/products/${product.slug}`);
+                    }}
+                    className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+                    title="View product"
+                  >
+                    <Eye className="h-4 w-4 text-gray-700" />
+                  </button>
+                  <Link
+                    href={`/admin/products/${product.slug}/edit`}
+                    className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <Edit className="h-4 w-4 text-gray-700" />
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(product.slug)}
+                    disabled={deletingId === product.slug}
+                    className="p-2 bg-white rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === product.slug ? (
+                      <RefreshCw className="h-4 w-4 text-red-600 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    )}
+                  </button>
                 </div>
               </div>
-            )}
-            {filteredProducts.length === 0 && !loading && (
-              <div className="px-6 py-3 bg-gray-50 border-b">
-                <div className="text-sm text-gray-600">
-                  {searchQuery ? (
-                    <>No products found matching &quot;<strong>{searchQuery}</strong>&quot;</>
-                  ) : (
-                    <>No products found matching your filters</>
+
+              {/* Info */}
+              <div className="p-4">
+                <h3 className="font-medium text-gray-900 truncate mb-1">{product.title}</h3>
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-bold text-gray-900">${product.price.toFixed(2)}</span>
+                  {product.original_price && product.original_price > product.price && (
+                    <span className="text-sm text-gray-400 line-through">${product.original_price.toFixed(2)}</span>
                   )}
                 </div>
               </div>
-            )}
-            <table className="w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '25%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '35%' }} />
-              </colgroup>
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Price
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Category
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Preview Checkout
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50 z-20">
-                    Actions
-                  </th>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Product</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Price</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Preview Checkout</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Featured</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedProducts.length === 0 && !loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      {searchQuery ? (
-                        <>
-                          No products found matching &quot;<strong>{searchQuery}</strong>&quot;. 
-                          <button
-                            onClick={() => setSearchQuery('')}
-                            className="ml-2 text-[#0046be] hover:underline"
-                          >
-                            Clear search
-                          </button>
-                        </>
-                      ) : (
-                        'No products found. Create your first product!'
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedProducts.map((product) => (
-                    <tr key={product.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-4" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <div className="flex items-center gap-3" style={{ overflow: 'hidden' }}>
-                          <div className="flex-shrink-0 h-14 w-14 relative">
+            <tbody className="divide-y divide-gray-100">
+              {paginatedProducts.map((product) => (
+                <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                        {product.images?.[0] ? (
                             <Image
-                              src={product.images[0] || '/placeholder.png'}
+                            src={product.images[0]}
                               alt={product.title}
-                              fill
-                              className="object-cover rounded"
+                            width={48}
+                            height={48}
+                            className="object-cover w-full h-full"
                             />
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <Package className="h-5 w-5 text-gray-300" />
                           </div>
-                          <div className="flex-1 min-w-0" style={{ overflow: 'hidden' }}>
-                            <div className="text-sm font-medium text-gray-900 truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {product.title}
+                        )}
                             </div>
-                            <div className="text-xs text-gray-500 truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.brand}</div>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {product.isFeatured ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[#fef9e6] px-2 py-0.5 text-[11px] font-semibold text-[#7a6b0d]">
-                                  <Star className="h-3 w-3 text-[#f4de40] fill-[#f4de40] fill-current" />
-                                  Featured
-                                </span>
-                              ) : null}
-                              {product.inStock === false ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                                  <PackageX className="h-3 w-3 text-red-500" />
-                                  Sold Out
-                                </span>
-                              ) : null}
-                            </div>
-                            {/* Mobile edit buttons - visible on small screens */}
-                            <div className="flex gap-2 mt-3 md:hidden">
-                              <Link
-                                href={`/admin/products/${product.slug}/edit`}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-[#0046be] text-white rounded-lg hover:bg-[#003494] shadow-md"
-                              >
-                                <Edit className="h-4 w-4" />
-                                Edit
-                              </Link>
-                              <button
-                                onClick={() => handleDelete(product.slug)}
-                                disabled={deletingSlug === product.slug}
-                                className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-md ${deletingSlug === product.slug ? 'opacity-60 cursor-wait' : ''}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                {deletingSlug === product.slug ? 'Deleting...' : 'Delete'}
-                              </button>
-                            </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 break-words leading-tight">{product.title}</p>
+                        <p className="text-xs text-gray-400 truncate mt-1">{product.slug}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-4 whitespace-nowrap text-sm font-semibold text-gray-900" style={{ overflow: 'hidden' }}>
-                        ${product.price.toFixed(2)}
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-gray-900">${product.price.toFixed(2)}</span>
                       </td>
-                      <td className="px-3 py-4 text-xs text-gray-600" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {product.category}
-                      </td>
-                      <td className="px-3 py-4" style={{ overflow: 'hidden' }}>
+                  <td className="px-4 py-3">
+                    {product.checkoutLink ? (
                         <a
                           href={product.checkoutLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-[#0046be] hover:text-[#003494] hover:underline font-medium"
-                          style={{ overflow: 'visible' }}
-                          title={`Preview checkout link: ${product.checkoutLink}`}
-                        >
-                          <span>Preview</span>
-                          <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="text-[10px] text-gray-500 ml-0.5">
-                            (buymeacoffee)
-                          </span>
-                        </a>
+                        className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Buymeacoffee link
+                      </a>
+                    ) : (
+                      <span className="text-sm text-gray-400">-</span>
+                    )}
                       </td>
-                      <td className="px-4 py-4 text-right sticky right-0 bg-white z-20 shadow-[2px_0_4px_rgba(0,0,0,0.05)]" style={{ overflow: 'visible' }}>
-                        <div className="flex justify-end gap-2 flex-nowrap">
+                  <td className="px-4 py-3 text-center">
                           <button
-                            onClick={() => toggleSoldOut(product)}
-                            disabled={updatingSoldOutSlug === product.slug}
-                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-xs font-bold shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0 border ${
-                              product.inStock === false
-                                ? 'bg-red-100 text-red-700 border-red-200 hover:bg-red-200'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            } ${updatingSoldOutSlug === product.slug ? 'opacity-60 cursor-wait' : ''}`}
-                            title={product.inStock === false ? 'Mark as in stock' : 'Mark as sold out'}
-                          >
-                            <PackageX className={`h-4 w-4 ${product.inStock === false ? 'text-red-500' : 'text-gray-500'}`} />
-                            {product.inStock === false ? 'In Stock' : 'Sold Out'}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleToggleFeatured(product.slug);
+                      }}
+                      disabled={togglingFeatured === product.slug || (!(product.isFeatured || product.is_featured) && featuredCount >= FEATURE_LIMIT)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                        (product.isFeatured || product.is_featured)
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      } disabled:opacity-50`}
+                      title={(product.isFeatured || product.is_featured) ? 'Remove from featured' : 'Add to featured'}
+                    >
+                      {togglingFeatured === product.slug ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Star className={`h-3 w-3 ${(product.isFeatured || product.is_featured) ? 'fill-amber-700' : ''}`} />
+                      )}
+                      {(product.isFeatured || product.is_featured) ? 'Featured' : 'Feature'}
+                          </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                          <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          router.push(`/products/${product.slug}`);
+                        }}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="View product"
+                      >
+                        <Eye className="h-4 w-4 text-gray-500" />
                           </button>
                           <button
-                            onClick={() => toggleFeatured(product)}
-                            disabled={
-                              updatingFeaturedSlug === product.slug ||
-                              (!product.isFeatured && featureLimitReached)
-                            }
-                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-xs font-bold shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0 border ${
-                              product.isFeatured
-                                ? 'bg-[#fef9e6] text-[#7a6b0d] border-[#f4de40]/30 hover:bg-[#fef5cc]'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            } ${updatingFeaturedSlug === product.slug ? 'opacity-60 cursor-wait' : ''}`}
-                            title={product.isFeatured ? 'Remove from featured list' : 'Mark as featured'}
-                          >
-                            <Star className={`h-4 w-4 ${product.isFeatured ? 'text-[#f4de40] fill-[#f4de40] fill-current' : 'text-gray-500'}`} />
-                            {product.isFeatured ? 'Unfeature' : 'Feature'}
-                          </button>
-                          <button
-                            onClick={() => handleDownload(product)}
-                            disabled={downloadingSlug === product.slug}
-                            className={`inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-xs font-bold shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0 ${downloadingSlug === product.slug ? 'opacity-60 cursor-wait' : ''}`}
-                            title="Download product JSON & images"
-                          >
-                            <DownloadCloud className="h-4 w-4" />
-                            {downloadingSlug === product.slug ? 'Preparing…' : 'Download'}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleToggleFeatured(product.slug);
+                        }}
+                        disabled={togglingFeatured === product.slug || (!(product.isFeatured || product.is_featured) && featuredCount >= FEATURE_LIMIT)}
+                        className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                          (product.isFeatured || product.is_featured)
+                            ? 'hover:bg-amber-50'
+                            : 'hover:bg-gray-100'
+                        }`}
+                        title={(product.isFeatured || product.is_featured) ? 'Unfeature product' : 'Feature product'}
+                      >
+                        {togglingFeatured === product.slug ? (
+                          <RefreshCw className="h-4 w-4 text-amber-600 animate-spin" />
+                        ) : (
+                          <Star className={`h-4 w-4 ${(product.isFeatured || product.is_featured) ? 'text-amber-500 fill-amber-500' : 'text-gray-500'}`} />
+                        )}
                           </button>
                           <Link
                             href={`/admin/products/${product.slug}/edit`}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#0046be] text-white rounded-lg hover:bg-[#003494] transition-all text-xs font-bold shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0"
-                            title="Edit Product"
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                           >
-                            <Edit className="h-4 w-4" />
-                            Edit
+                        <Edit className="h-4 w-4 text-gray-500" />
                           </Link>
                           <button
                             onClick={() => handleDelete(product.slug)}
-                            disabled={deletingSlug === product.slug}
-                            className={`inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all text-xs font-bold shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0 ${deletingSlug === product.slug ? 'opacity-60 cursor-wait' : ''}`}
-                            title={deletingSlug === product.slug ? 'Deleting product...' : 'Delete Product'}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            {deletingSlug === product.slug ? 'Deleting...' : 'Delete'}
+                        disabled={deletingId === product.slug}
+                        className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        {deletingId === product.slug ? (
+                          <RefreshCw className="h-4 w-4 text-red-600 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        )}
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+              ))}
               </tbody>
             </table>
           </div>
+      )}
 
           {/* Pagination */}
-          {filteredProducts.length > itemsPerPage && (
-            <div className="bg-white px-6 py-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  Showing <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> to{' '}
-                  <strong>{Math.min(currentPage * itemsPerPage, filteredProducts.length)}</strong> of{' '}
-                  <strong>{filteredProducts.length}</strong> products
-                </div>
-                <div className="flex items-center gap-2">
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-2">
                   <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
+            <ChevronLeft className="h-5 w-5" />
                   </button>
                   
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNumber;
-                      if (totalPages <= 5) {
-                        pageNumber = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNumber = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNumber = totalPages - 4 + i;
-                      } else {
-                        pageNumber = currentPage - 2 + i;
-                      }
-                      
-                      return (
+          <span className="px-4 py-2 text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </span>
+
                         <button
-                          key={pageNumber}
-                          onClick={() => setCurrentPage(pageNumber)}
-                          className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                            currentPage === pageNumber
-                              ? 'bg-[#0046be] text-white'
-                              : 'border border-gray-300 hover:bg-gray-50 text-gray-700'
-                          }`}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-5 w-5" />
                   </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
-
-      {/* Footer */}
-      <footer className="mt-12 pb-8 text-center">
-        <p className="text-sm text-gray-500 flex items-center justify-center gap-1">
-          Made with <Heart className="h-4 w-4 text-red-500 fill-red-500" /> by Mehdi (l3alawi)
-        </p>
-      </footer>
+      )}
     </AdminLayout>
   );
 }
-

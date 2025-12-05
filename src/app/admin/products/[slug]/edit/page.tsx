@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Plus, X, Loader2, Edit } from 'lucide-react';
+import { 
+  ArrowLeft, Save, Plus, X, Loader2, Package, DollarSign,
+  Tag, Star, Image as ImageIcon, Search, CheckCircle, AlertCircle, 
+  ChevronDown, Trash2, Eye, Globe, Twitter, Info, User, MapPin,
+  Calendar, ThumbsUp
+} from 'lucide-react';
 import type { Product } from '@/types/product';
 import ImageUploader, { ImageUploaderRef, UploadStatus } from '@/components/admin/ImageUploader';
+import AdminLayout from '@/components/AdminLayout';
+import AdminLoading from '@/components/AdminLoading';
 
 const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 interface Review {
   id: string;
@@ -29,6 +32,80 @@ interface Review {
   images?: string[] | string;
 }
 
+// Reusable Section Component
+function Section({ 
+  id, 
+  icon: Icon, 
+  title, 
+  description,
+  children,
+  defaultOpen = true,
+  badge
+}: { 
+  id: string;
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: string | number;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isOpen ? 'bg-blue-100' : 'bg-gray-100'}`}>
+          <Icon className={`h-5 w-5 ${isOpen ? 'text-blue-600' : 'text-gray-500'}`} />
+        </div>
+        <div className="flex-1 text-left">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-gray-900">{title}</h3>
+            {badge !== undefined && (
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{badge}</span>
+            )}
+          </div>
+          {description && <p className="text-sm text-gray-500 mt-0.5">{description}</p>}
+        </div>
+        <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="px-5 pb-5 pt-2 border-t border-gray-100">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Input Field Component
+function Field({ 
+  label, 
+  required, 
+  hint,
+  children 
+}: { 
+  label: string; 
+  required?: boolean;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
 export default function EditProductPage() {
   const FEATURE_LIMIT = 6;
   const router = useRouter();
@@ -43,98 +120,57 @@ export default function EditProductPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({ uploading: false });
   const [slugDirty, setSlugDirty] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+
   const [formData, setFormData] = useState({
-    slug: '',
-    title: '',
-    description: '',
-    price: '',
-    brand: '',
-    category: '',
-    condition: '',
-    payee_email: '',
-    checkout_link: '',
-    currency: 'USD',
-    images: '',
-    rating: '0',
-    review_count: '0',
-    in_stock: true,
-    is_featured: false,
-    // Meta fields
-    metaTitle: '',
-    metaDescription: '',
-    metaKeywords: '',
-    metaOgTitle: '',
-    metaOgDescription: '',
-    metaOgImage: '',
-    metaTwitterTitle: '',
-    metaTwitterDescription: '',
-    metaTwitterImage: '',
+    slug: '', title: '', description: '', price: '', original_price: '',
+    brand: '', category: '', condition: '', payee_email: '', checkout_link: '',
+    currency: 'USD', images: '', rating: '0', review_count: '0',
+    in_stock: true, is_featured: false,
+    metaTitle: '', metaDescription: '', metaKeywords: '',
+    metaOgTitle: '', metaOgDescription: '', metaOgImage: '',
+    metaTwitterTitle: '', metaTwitterDescription: '', metaTwitterImage: '',
   });
+
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [showReviewForm, setShowReviewForm] = useState(false);
-  const [editingReviewIndex, setEditingReviewIndex] = useState<number | null>(null);
-  const [currentReview, setCurrentReview] = useState<Partial<Review>>({
-    id: '',
-    author: '',
-    avatar: '',
-    rating: 5,
-    date: new Date().toISOString().split('T')[0],
-    title: '',
-    content: '',
-    helpful: 0,
-    verified: true,
-    location: '',
-    purchaseDate: '',
-    images: '',
-  });
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [editingReview, setEditingReview] = useState<{ index: number; data: Partial<Review> } | null>(null);
   const [featuredCount, setFeaturedCount] = useState(0);
-  const [featuredLimitReached, setFeaturedLimitReached] = useState(false);
 
-  const loadFeaturedCount = useRef<(() => Promise<void>) | null>(null);
-
-  loadFeaturedCount.current = async () => {
-    try {
-      const response = await fetch('/api/admin/products');
-      if (!response.ok) return;
-      const data = await response.json();
-      const count = Array.isArray(data)
-        ? data.filter((item: any) => item?.isFeatured || item?.is_featured).length
-        : 0;
-      setFeaturedCount(count);
-      setFeaturedLimitReached(count >= FEATURE_LIMIT);
-    } catch (countError) {
-      console.error('Failed to load featured count', countError);
-    }
-  };
-
-  const fetchProduct = async () => {
+  // Fetch product
+  const fetchProduct = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/products/${slug}`);
+      const adminToken = localStorage.getItem('admin_token');
+      const response = await fetch(`/api/admin/products/${encodeURIComponent(slug)}`, {
+        headers: {
+          ...(adminToken && { 'Authorization': `Bearer ${adminToken}` })
+        }
+      });
       if (!response.ok) {
-        throw new Error('Failed to fetch product');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Product not found');
       }
       const data = await response.json();
       setProduct(data);
       
-      // Populate form data
       setFormData({
         slug: data.slug || '',
-        title: data.title,
-        description: data.description,
-        price: data.price.toString(),
-        brand: data.brand,
-        category: data.category,
-        condition: data.condition,
+        title: data.title || '',
+        description: data.description || '',
+        price: data.price?.toString() || '',
+        original_price: data.original_price?.toString() || data.originalPrice?.toString() || '',
+        brand: data.brand || '',
+        category: data.category || '',
+        condition: data.condition || '',
         payee_email: data.payeeEmail || data.payee_email || '',
         checkout_link: data.checkoutLink || data.checkout_link || '',
         currency: data.currency || 'USD',
         images: Array.isArray(data.images) ? data.images.join(', ') : data.images || '',
         rating: data.rating?.toString() || '0',
         review_count: data.reviewCount?.toString() || data.review_count?.toString() || '0',
-        in_stock: data.inStock !== undefined ? data.inStock : (data.in_stock !== undefined ? data.in_stock : true),
-        is_featured: data.isFeatured !== undefined ? data.isFeatured : (data.is_featured !== undefined ? data.is_featured : false),
-        // Meta fields
+        in_stock: data.inStock ?? data.in_stock ?? true,
+        is_featured: data.isFeatured ?? data.is_featured ?? false,
         metaTitle: data.meta?.title || '',
         metaDescription: data.meta?.description || '',
         metaKeywords: data.meta?.keywords || '',
@@ -146,1137 +182,655 @@ export default function EditProductPage() {
         metaTwitterImage: data.meta?.twitterImage || '',
       });
 
-      // Load reviews
-      if (data.reviews && Array.isArray(data.reviews)) {
-        setReviews(data.reviews.map((review: any) => ({
-          ...review,
-          images: Array.isArray(review.images) ? review.images.join(', ') : review.images || '',
+      if (data.reviews?.length) {
+        setReviews(data.reviews.map((r: any) => ({
+          ...r,
+          images: Array.isArray(r.images) ? r.images.join(', ') : r.images || '',
         })));
       }
 
-      await loadFeaturedCount.current?.();
+      // Fetch featured count
+      const prodRes = await fetch('/api/admin/products', {
+        headers: {
+          ...(adminToken && { 'Authorization': `Bearer ${adminToken}` })
+        }
+      });
+      if (prodRes.ok) {
+        const prods = await prodRes.json();
+        setFeaturedCount(prods.filter((p: any) => p.isFeatured || p.is_featured).length);
+      }
     } catch (err) {
       setError('Failed to load product');
-      console.error(err);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchProduct();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  useEffect(() => {
-    if (!product) {
-      loadFeaturedCount.current?.();
-    }
-  }, [product]);
+  useEffect(() => { fetchProduct(); }, [fetchProduct]);
+
+  const updateField = (field: string, value: any) => {
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'title' && !slugDirty) {
+        updated.slug = slugify(value);
+      }
+      return updated;
+    });
+    setHasChanges(true);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-    setSaving(true);
-    setUploadStatus((prev) => ({ ...prev, message: undefined }));
+    setError(''); setSuccess(''); setSaving(true);
 
     try {
-      // First, upload any pending images
-      let uploadedImageUrls: string[] = [];
-      let finalImages: string[] = formData.images
-        .split(',')
-        .map((img) => img.trim())
-        .filter((img) => img.length > 0);
+      let finalImages = formData.images.split(',').map(s => s.trim()).filter(Boolean);
 
       if (imageUploaderRef.current) {
-        try {
-          const { uploadedUrls, allImages } = await imageUploaderRef.current.uploadPendingImages();
-          uploadedImageUrls = uploadedUrls;
-
-          if (allImages.length > 0) {
-            finalImages = allImages;
-            setFormData((prev) => ({
-              ...prev,
-              images: allImages.join(', '),
-            }));
-          }
-        } catch (uploadError: any) {
-          setError(`Image upload failed: ${uploadError.message}`);
-          setSaving(false);
-          return;
-        }
+        const { allImages } = await imageUploaderRef.current.uploadPendingImages();
+        if (allImages.length) finalImages = allImages;
       }
 
-      const uniqueImages = Array.from(new Set(finalImages));
+      if (!finalImages.length) throw new Error('At least one image is required');
 
-      // Check if we have at least a thumbnail (first image) or pending thumbnail
-      const hasThumbnail = uniqueImages.length > 0 || (imageUploaderRef.current?.getPendingCount() ?? 0) > 0;
-      
-      if (!hasThumbnail) {
-        setError('At least a thumbnail image is required');
-        setSaving(false);
-        return;
-      }
-
-      // Build meta object
       const meta: any = {};
-      if (formData.metaTitle) meta.title = formData.metaTitle;
-      if (formData.metaDescription) meta.description = formData.metaDescription;
-      if (formData.metaKeywords) meta.keywords = formData.metaKeywords;
-      if (formData.metaOgTitle) meta.ogTitle = formData.metaOgTitle;
-      if (formData.metaOgDescription) meta.ogDescription = formData.metaOgDescription;
-      if (formData.metaOgImage) meta.ogImage = formData.metaOgImage;
-      if (formData.metaTwitterTitle) meta.twitterTitle = formData.metaTwitterTitle;
-      if (formData.metaTwitterDescription) meta.twitterDescription = formData.metaTwitterDescription;
-      if (formData.metaTwitterImage) meta.twitterImage = formData.metaTwitterImage;
+      ['Title', 'Description', 'Keywords', 'OgTitle', 'OgDescription', 'OgImage', 'TwitterTitle', 'TwitterDescription', 'TwitterImage']
+        .forEach(key => {
+          const val = formData[`meta${key}` as keyof typeof formData];
+          if (val) meta[key.charAt(0).toLowerCase() + key.slice(1)] = val;
+        });
 
-      // Process reviews - parse images from comma-separated string
-      const processedReviews = reviews.map((review) => ({
-        ...review,
-        images: review.images
-          ? (typeof review.images === 'string'
-              ? review.images.split(',').map((img) => img.trim()).filter((img) => img.length > 0)
-              : review.images)
-          : [],
+      const processedReviews = reviews.map(r => ({
+        ...r,
+        images: typeof r.images === 'string' 
+          ? r.images.split(',').map(s => s.trim()).filter(Boolean) 
+          : r.images || []
       }));
 
-      // Sanitize slug
-      const sanitizedSlug = slugify(formData.slug || formData.title);
-      if (!sanitizedSlug) {
-        setError('Slug is required. Please provide a slug or title to generate one.');
-        setSaving(false);
-        return;
-      }
+      const finalSlug = slugify(formData.slug || formData.title);
+      if (!finalSlug) throw new Error('URL slug is required');
 
-      const updates = {
-        slug: sanitizedSlug,
-        title: formData.title,
-        description: formData.description,
-        price: parseFloat(formData.price),
-        brand: formData.brand,
-        category: formData.category,
-        condition: formData.condition,
-        payee_email: formData.payee_email.trim(),
-        checkout_link: formData.checkout_link,
-        currency: formData.currency,
-        images: uniqueImages,
-        rating: parseFloat(formData.rating),
-        review_count: parseInt(formData.review_count),
-        reviewCount: parseInt(formData.review_count),
-        in_stock: formData.in_stock,
-        inStock: formData.in_stock,
-        is_featured: formData.is_featured,
-        isFeatured: formData.is_featured,
-        reviews: processedReviews.length > 0 ? processedReviews : [],
-        meta: Object.keys(meta).length > 0 ? meta : {},
-      };
-
-      const response = await fetch(`/api/admin/products/${slug}`, {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(`/api/admin/products/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
         },
-        body: JSON.stringify(updates),
+        body: JSON.stringify({
+          slug: finalSlug,
+          title: formData.title || '',
+          description: formData.description || '',
+          price: parseFloat(formData.price) || 0,
+          original_price: formData.original_price ? parseFloat(formData.original_price) : null,
+          brand: formData.brand || '',
+          category: formData.category || '',
+          condition: formData.condition || '',
+          payee_email: formData.payee_email?.trim() || '',
+          checkout_link: formData.checkout_link || '',
+          currency: formData.currency || 'USD',
+          images: [...new Set(finalImages)],
+          rating: parseFloat(formData.rating) || 0,
+          review_count: parseInt(formData.review_count) || 0,
+          in_stock: formData.in_stock ?? true,
+          is_featured: formData.is_featured ?? false,
+          reviews: processedReviews,
+          meta: Object.keys(meta).length ? meta : {},
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update product');
+        const err = await response.json().catch(() => ({ error: `Update failed: ${response.status} ${response.statusText}` }));
+        throw new Error(err.error || 'Update failed');
       }
 
-      const updatedProduct = await response.json();
-      setSuccess('Product updated successfully in database!');
-      setProduct(updatedProduct); // Update product state with server response
+      setSuccess('Product saved!');
+      setHasChanges(false);
       
-      // If slug changed, redirect to new slug URL
-      if (sanitizedSlug !== slug) {
-        setTimeout(() => {
-          router.push(`/admin/products/${sanitizedSlug}/edit`);
-        }, 1000);
-      } else {
-        fetchProduct(); // Refresh to ensure we have latest data
+      if (finalSlug !== slug) {
+        setTimeout(() => router.push(`/admin/products/${finalSlug}/edit`), 1000);
       }
-      setTimeout(() => setSuccess(''), 5000);
-      
-      // Optionally redirect back to products list after a delay
-      // setTimeout(() => router.push('/admin/products'), 2000);
     } catch (err: any) {
-      setError(err.message || 'Failed to update product');
+      setError(err.message);
     } finally {
       setSaving(false);
-      setUploadStatus((prev) => ({ uploading: false, message: prev.message }));
     }
   };
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target;
-    const processedValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
-
-    if (name === 'slug') {
-      const sanitized = slugify(value);
-      setSlugDirty(true);
-      setFormData((prev) => ({
-        ...prev,
-        slug: sanitized,
-      }));
-      return;
-    }
-
-    if (name === 'is_featured' && typeof processedValue === 'boolean') {
-      const currentlyFeatured = formData.is_featured;
-      if (!currentlyFeatured && processedValue && featuredCount >= FEATURE_LIMIT) {
-        setError(`You can feature up to ${FEATURE_LIMIT} products. Unfeature another product first.`);
-        return;
-      }
-
-      setFeaturedCount((prev) => {
-        let next = prev;
-        if (!currentlyFeatured && processedValue) {
-          next = prev + 1;
-        } else if (currentlyFeatured && !processedValue) {
-          next = Math.max(0, prev - 1);
-        }
-        setFeaturedLimitReached(next >= FEATURE_LIMIT);
-        return next;
-      });
-    }
-
-    setFormData((prev) => {
-      const next = {
-        ...prev,
-        [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-      };
-
-      if (name === 'title' && !slugDirty) {
-        next.slug = slugify(processedValue as string);
-      }
-
-      return next;
-    });
-  };
-
-  const regenerateSlug = () => {
-    const generated = slugify(formData.title || '');
-    setFormData((prev) => ({
-      ...prev,
-      slug: generated,
-    }));
-    setSlugDirty(false);
-  };
-
-  const handleReviewChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target;
-    setCurrentReview((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : type === 'number' ? parseFloat(value) : value,
-    }));
-  };
-
-  const addReview = () => {
-    if (!currentReview.author || !currentReview.title || !currentReview.content) {
-      alert('Please fill in author, title, and content for the review');
-      return;
-    }
-
-    const review: Review = {
-      id: currentReview.id || `review-${Date.now()}`,
-      author: currentReview.author || '',
-      avatar: currentReview.avatar || undefined,
-      rating: currentReview.rating || 5,
-      date: currentReview.date || new Date().toISOString().split('T')[0],
-      title: currentReview.title || '',
-      content: currentReview.content || '',
-      helpful: currentReview.helpful || 0,
-      verified: currentReview.verified !== undefined ? currentReview.verified : true,
-      location: currentReview.location || undefined,
-      purchaseDate: currentReview.purchaseDate || undefined,
-      images: currentReview.images
-        ? (typeof currentReview.images === 'string'
-            ? currentReview.images.split(',').map((img) => img.trim()).filter((img) => img.length > 0)
-            : currentReview.images)
-        : undefined,
-    };
-
-    if (editingReviewIndex !== null) {
-      // Update existing review
-      const updatedReviews = [...reviews];
-      updatedReviews[editingReviewIndex] = review;
-      setReviews(updatedReviews);
-      setEditingReviewIndex(null);
+  const openReviewModal = (index?: number) => {
+    if (index !== undefined) {
+      setEditingReview({ index, data: { ...reviews[index] } });
     } else {
-      // Add new review
+      setEditingReview({ 
+        index: -1, 
+        data: { id: `r-${Date.now()}`, author: '', rating: 5, date: new Date().toISOString().split('T')[0], title: '', content: '', verified: true }
+      });
+    }
+    setShowReviewModal(true);
+  };
+
+  const saveReview = () => {
+    if (!editingReview?.data.author || !editingReview?.data.content) return;
+    
+    const review = editingReview.data as Review;
+    if (editingReview.index === -1) {
       setReviews([...reviews, review]);
+    } else {
+      const updated = [...reviews];
+      updated[editingReview.index] = review;
+      setReviews(updated);
     }
-
-    setCurrentReview({
-      id: '',
-      author: '',
-      avatar: '',
-      rating: 5,
-      date: new Date().toISOString().split('T')[0],
-      title: '',
-      content: '',
-      helpful: 0,
-      verified: true,
-      location: '',
-      purchaseDate: '',
-      images: '',
-    });
-    setShowReviewForm(false);
+    setShowReviewModal(false);
+    setHasChanges(true);
   };
 
-  const editReview = (index: number) => {
-    const review = reviews[index];
-    setCurrentReview({
-      id: review.id || '',
-      author: review.author || '',
-      avatar: review.avatar || '',
-      rating: review.rating || 5,
-      date: review.date || new Date().toISOString().split('T')[0],
-      title: review.title || '',
-      content: review.content || '',
-      helpful: review.helpful || 0,
-      verified: review.verified !== undefined ? review.verified : true,
-      location: review.location || '',
-      purchaseDate: review.purchaseDate || '',
-      images: Array.isArray(review.images) ? review.images.join(', ') : (review.images || ''),
-    });
-    setEditingReviewIndex(index);
-    setShowReviewForm(true);
-  };
-
-  const removeReview = (index: number) => {
+  const deleteReview = (index: number) => {
+    if (confirm('Delete this review?')) {
     setReviews(reviews.filter((_, i) => i !== index));
-    if (editingReviewIndex === index) {
-      setEditingReviewIndex(null);
-      setShowReviewForm(false);
-    } else if (editingReviewIndex !== null && editingReviewIndex > index) {
-      setEditingReviewIndex(editingReviewIndex - 1);
+      setHasChanges(true);
     }
   };
 
-  const handleResyncImages = async () => {
-    const currentSlug = formData.slug || slug;
-    if (!currentSlug) {
-      setUploadStatus({ uploading: false, message: 'Product slug is required to resync images.' });
-      return;
-    }
-
-    try {
-      setUploadStatus({ uploading: true, message: 'Resyncing images from storage...' });
-      const response = await fetch(`/api/admin/products/${encodeURIComponent(currentSlug)}/images`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to resync images.');
-      }
-
-      const data = await response.json();
-      const images: string[] = Array.isArray(data.images) ? Array.from(new Set(data.images)) : [];
-
-      setFormData((prev) => ({
-        ...prev,
-        images: images.join(', '),
-      }));
-
-      setUploadStatus({
-        uploading: false,
-        message: images.length
-          ? `Synced ${images.length} image${images.length > 1 ? 's' : ''} from storage.`
-          : 'No images found in storage for this product.',
-      });
-    } catch (err: any) {
-      setUploadStatus({
-        uploading: false,
-        message: err.message || 'Failed to resync images.',
-      });
-    }
-  };
-
-  const handleUpdateCheckoutLink = async () => {
-    if (!confirm('Update checkout link only?')) return;
-
-    try {
-      const response = await fetch(`/api/admin/products/${slug}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ checkout_link: formData.checkout_link }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update checkout link');
-      }
-
-      alert('Checkout link updated successfully!');
-      fetchProduct();
-    } catch (err: any) {
-      alert(err.message || 'Failed to update checkout link');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading product...</div>
-      </div>
-    );
-  }
+  if (loading) return <AdminLoading message="Loading product..." />;
 
   if (!product) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-red-600">Product not found</div>
+      <AdminLayout title="Not Found">
+        <div className="text-center py-16">
+          <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-600 mb-4">Product not found</p>
+          <Link href="/admin/products" className="text-blue-600 hover:underline">← Back to products</Link>
       </div>
+      </AdminLayout>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/admin/products"
-              className="text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft className="h-5 w-5" />
+  const discount = formData.original_price && parseFloat(formData.original_price) > parseFloat(formData.price || '0')
+    ? Math.round((1 - parseFloat(formData.price || '0') / parseFloat(formData.original_price)) * 100)
+    : null;
+
+    return (
+    <AdminLayout>
+      {/* Compact Sticky Header */}
+      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-white border-b border-gray-200 mb-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/admin/products" className="p-2 -ml-2 hover:bg-gray-100 rounded-lg">
+              <ArrowLeft className="h-5 w-5 text-gray-500" />
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900">Edit Product: {product.title}</h1>
+            <div className="min-w-0">
+              <h1 className="font-semibold text-gray-900 truncate">{formData.title || 'Untitled Product'}</h1>
+              <p className="text-xs text-gray-400">Editing • /{formData.slug}</p>
+      </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {hasChanges && (
+              <span className="hidden sm:flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                Unsaved
+              </span>
+            )}
+            <Link
+              href={`/products/${slug}`}
+              target="_blank"
+              className="p-2 hover:bg-gray-100 rounded-lg"
+              title="Preview"
+            >
+              <Eye className="h-5 w-5 text-gray-500" />
+            </Link>
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-sm"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? 'Saving...' : 'Save'}
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl">
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 text-red-800 rounded-lg border border-red-200">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="mb-4 p-4 bg-green-50 text-green-800 rounded-lg border border-green-200">
-              {success}
-            </div>
-          )}
-
-          {uploadStatus.uploading && (
-            <div className="mb-4 flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{uploadStatus.message || 'Uploading images, please keep this tab open...'}</span>
-            </div>
-          )}
-          {!uploadStatus.uploading && uploadStatus.message && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg">
-              {uploadStatus.message}
+      {/* Alerts */}
+      {(error || success) && (
+        <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
+          {error ? <AlertCircle className="h-5 w-5 text-red-600" /> : <CheckCircle className="h-5 w-5 text-green-600" />}
+          <span className={error ? 'text-red-700' : 'text-green-700'}>{error || success}</span>
+          <button onClick={() => { setError(''); setSuccess(''); }} className="ml-auto p-1 hover:bg-white/50 rounded">
+            <X className="h-4 w-4" />
+          </button>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
-            {/* Basic Information */}
-            <div className="border-b pb-4">
-              <h2 className="text-lg font-semibold">Basic Information</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Slug * (used for URLs)
-                </label>
-                <div className="flex gap-2">
+      <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl">
+        
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 1: BASIC INFO
+        ═══════════════════════════════════════════════════════════════ */}
+        <Section id="basic" icon={Package} title="Basic Information" description="Title, description, and product details">
+          <div className="space-y-4">
+            <Field label="Product Title" required>
                   <input
                     type="text"
-                    name="slug"
+                value={formData.title}
+                onChange={(e) => updateField('title', e.target.value)}
+                placeholder="Enter product title"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                     required
-                    value={formData.slug}
-                    onChange={handleChange}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be] font-mono text-sm"
-                    placeholder="canon-camera-g7x-mark-iii"
-                  />
-                  <button
-                    type="button"
-                    onClick={regenerateSlug}
-                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-                    title="Regenerate from title"
-                  >
-                    Regenerate
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">Used for URLs. Only lowercase letters, numbers, and hyphens.</p>
-              </div>
+              />
+            </Field>
 
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  value={formData.title}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Price *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  name="price"
-                  required
-                  value={formData.price}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rating
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="5"
-                  name="rating"
-                  value={formData.rating}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Review Count
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  name="review_count"
-                  value={formData.review_count}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Brand *
-                </label>
-                <input
-                  type="text"
-                  name="brand"
-                  required
-                  value={formData.brand}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Category *
-                </label>
-                <input
-                  type="text"
-                  name="category"
-                  required
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Condition *
-                </label>
-                <input
-                  type="text"
-                  name="condition"
-                  required
-                  value={formData.condition}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Currency
-                </label>
-                <select
-                  name="currency"
-                  value={formData.currency}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                >
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                </select>
-              </div>
-
+            <Field label="URL Slug" hint="Auto-generated from title. Only lowercase letters, numbers, and hyphens.">
               <div className="flex items-center">
-                <label className="flex items-center gap-3 text-sm font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    name="in_stock"
-                    checked={formData.in_stock}
-                    onChange={handleChange}
-                    className="h-4 w-4 rounded border-gray-300 text-[#0046be] focus:ring-[#0046be]"
-                  />
-                  In stock
-                </label>
-                <label className="flex items-center gap-3 text-sm font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    name="is_featured"
-                    checked={formData.is_featured}
-                    onChange={handleChange}
-                    className="h-4 w-4 rounded border-gray-300 text-[#0046be] focus:ring-[#0046be]"
-                    disabled={featuredLimitReached && !formData.is_featured}
-                  />
-                  Featured on storefront
-                </label>
-                {featuredLimitReached && !formData.is_featured && (
-                  <p className="text-xs text-[#7a6b0d]">
-                    Maximum of {FEATURE_LIMIT} featured products reached. Unfeature another product first.
-                  </p>
-                )}
+                <span className="text-gray-400 text-sm mr-2">/products/</span>
+                <input
+                  type="text"
+                  value={formData.slug}
+                  onChange={(e) => { setSlugDirty(true); updateField('slug', slugify(e.target.value)); }}
+                  placeholder="product-url"
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
               </div>
-            </div>
+            </Field>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description *
-              </label>
+            <Field label="Description">
               <textarea
-                name="description"
-                required
-                rows={6}
                 value={formData.description}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
+                onChange={(e) => updateField('description', e.target.value)}
+                placeholder="Describe the product..."
+                rows={4}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none"
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Product Images *
-              </label>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-2">
-                <p className="text-xs text-gray-600">
-                  Manage the thumbnail and gallery images stored in Supabase.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleResyncImages}
-                  className="self-start md:self-auto inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50"
-                  disabled={uploadStatus.uploading}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <Field label="Brand">
+                <input
+                  type="text"
+                  value={formData.brand}
+                  onChange={(e) => updateField('brand', e.target.value)}
+                  placeholder="Brand"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
+              </Field>
+              <Field label="Category">
+                <input
+                  type="text"
+                  value={formData.category}
+                  onChange={(e) => updateField('category', e.target.value)}
+                  placeholder="Category"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
+              </Field>
+              <Field label="Condition">
+                <select
+                  value={formData.condition}
+                  onChange={(e) => updateField('condition', e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
                 >
-                  Resync from Storage
-                </button>
-              </div>
-              
-              {/* Image Uploader Component */}
-              <div className="mb-4">
-                <ImageUploader
-                  ref={imageUploaderRef}
-                  productSlug={formData.slug || slug}
-                  currentImages={formData.images ? formData.images.split(',').map(img => img.trim()).filter(img => img) : []}
-                  onImagesUpdate={(urls) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      images: urls.join(', '),
-                    }));
-                }}
-                onUploadStatusChange={setUploadStatus}
-                />
+                  <option value="">Select</option>
+                  <option value="New">New</option>
+                  <option value="Like New">Like New</option>
+                  <option value="Excellent">Excellent</option>
+                  <option value="Good">Good</option>
+                  <option value="Fair">Fair</option>
+                </select>
+              </Field>
               </div>
 
-              {/* Manual URL Input (Optional - for advanced users) */}
-              <details className="mt-4">
-                <summary className="cursor-pointer text-sm text-gray-600 hover:text-gray-900 mb-2">
-                  Advanced: Manually edit image URLs
-                </summary>
-                <textarea
-                  name="images"
-                  rows={3}
-                  value={formData.images}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be] font-mono text-sm mt-2"
-                  placeholder="Comma-separated image URLs"
+            {/* Toggle Switches */}
+            <div className="flex flex-wrap gap-6 pt-4 border-t border-gray-100">
+              <label className={`inline-flex items-center gap-3 cursor-pointer ${featuredCount >= FEATURE_LIMIT && !formData.is_featured ? 'opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={formData.is_featured}
+                  onChange={(e) => updateField('is_featured', e.target.checked)}
+                  disabled={featuredCount >= FEATURE_LIMIT && !formData.is_featured}
+                  className="sr-only peer"
                 />
-              </details>
+                <div className="relative w-10 h-6 bg-gray-200 rounded-full peer-checked:bg-amber-500 transition-colors">
+                  <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform" />
+                </div>
+                <span className="text-sm text-gray-700">Featured</span>
+                <span className="text-xs text-gray-400">({featuredCount}/{FEATURE_LIMIT})</span>
+                </label>
+              </div>
             </div>
+        </Section>
 
-            {/* Payment & Checkout */}
-            <div className="border-t pt-4">
-              <h2 className="text-lg font-semibold mb-4">Payment & Checkout</h2>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payee Email <span className="text-gray-400">(optional)</span>
-              </label>
-              <input
-                type="email"
-                name="payee_email"
-                value={formData.payee_email}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                placeholder="Optional: destination email for payouts"
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 2: PRICING
+        ═══════════════════════════════════════════════════════════════ */}
+        <Section id="pricing" icon={DollarSign} title="Pricing" description="Set product price and payment details">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <Field label="Price" required>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.price}
+                    onChange={(e) => updateField('price', e.target.value)}
+                    placeholder="0.00"
+                required
+                    className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Leave blank to keep using your default payout email.
-              </p>
+            </div>
+              </Field>
+
+              <Field label="Original Price" hint="For discount display">
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.original_price}
+                    onChange={(e) => updateField('original_price', e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
+              </div>
+              </Field>
+
+              <Field label="Currency">
+                <select
+                  value={formData.currency}
+                  onChange={(e) => updateField('currency', e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                </select>
+              </Field>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Checkout Link *
-              </label>
-              <div className="flex gap-2">
+            {/* Discount Badge */}
+            {discount && (
+              <div className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                <Tag className="h-4 w-4" />
+                <span className="font-medium">{discount}% OFF</span>
+                <span className="text-green-600">
+                  (Save ${(parseFloat(formData.original_price) - parseFloat(formData.price)).toFixed(2)})
+                </span>
+            </div>
+            )}
+
+            <div className="pt-4 border-t border-gray-100">
+              <Field label="Checkout Link">
                 <input
                   type="url"
-                  name="checkout_link"
-                  required
                   value={formData.checkout_link}
-                  onChange={handleChange}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
+                  onChange={(e) => updateField('checkout_link', e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                 />
-                <button
-                  type="button"
-                  onClick={handleUpdateCheckoutLink}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  Update Link Only
-                </button>
+              </Field>
               </div>
-              <p className="mt-1 text-sm text-gray-500">
-                You can update just the checkout link without saving all other fields
-              </p>
             </div>
+        </Section>
 
-            {/* Reviews Section */}
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Reviews ({reviews.length})</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!showReviewForm) {
-                      setEditingReviewIndex(null);
-                      setCurrentReview({
-                        id: '',
-                        author: '',
-                        avatar: '',
-                        rating: 5,
-                        date: new Date().toISOString().split('T')[0],
-                        title: '',
-                        content: '',
-                        helpful: 0,
-                        verified: true,
-                        location: '',
-                        purchaseDate: '',
-                        images: '',
-                      });
-                    }
-                    setShowReviewForm(!showReviewForm);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#0046be] text-white rounded-lg hover:bg-[#003494] text-sm"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Review
-                </button>
-              </div>
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 3: IMAGES
+        ═══════════════════════════════════════════════════════════════ */}
+        <Section id="media" icon={ImageIcon} title="Images" description="Upload product photos">
+          <ImageUploader
+            ref={imageUploaderRef}
+            productSlug={formData.slug || slug}
+            currentImages={formData.images.split(',').map(s => s.trim()).filter(Boolean)}
+            onImagesUpdate={(urls) => updateField('images', urls.join(', '))}
+            onUploadStatusChange={setUploadStatus}
+          />
+          {uploadStatus.message && (
+            <p className={`mt-3 text-sm ${uploadStatus.uploading ? 'text-blue-600' : 'text-gray-500'}`}>
+              {uploadStatus.message}
+            </p>
+          )}
 
-              {showReviewForm && (
-                <div className="mb-6 p-4 border border-gray-300 rounded-lg bg-gray-50 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Review ID
-                      </label>
-                      <input
-                        type="text"
-                        name="id"
-                        value={currentReview.id || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="review-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Author *
-                      </label>
-                      <input
-                        type="text"
-                        name="author"
-                        required
-                        value={currentReview.author || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Avatar URL
-                      </label>
-                      <input
-                        type="url"
-                        name="avatar"
-                        value={currentReview.avatar || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Rating *
-                      </label>
+          {/* Rating override */}
+          <div className="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-100">
+            <Field label="Display Rating" hint="0-5 stars">
                       <input
                         type="number"
-                        min="1"
+                min="0"
                         max="5"
-                        name="rating"
-                        value={currentReview.rating || 5}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date *
-                      </label>
-                      <input
-                        type="date"
-                        name="date"
-                        value={currentReview.date || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Location
-                      </label>
-                      <input
-                        type="text"
-                        name="location"
-                        value={currentReview.location || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Purchase Date
-                      </label>
-                      <input
-                        type="text"
-                        name="purchaseDate"
-                        value={currentReview.purchaseDate || ''}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="January 2025"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Helpful Count
-                      </label>
+                step="0.1"
+                value={formData.rating}
+                onChange={(e) => updateField('rating', e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              />
+            </Field>
+            <Field label="Review Count" hint="Displayed review count">
                       <input
                         type="number"
                         min="0"
-                        name="helpful"
-                        value={currentReview.helpful || 0}
-                        onChange={handleReviewChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
+                value={formData.review_count}
+                onChange={(e) => updateField('review_count', e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              />
+            </Field>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Review Title *
-                    </label>
-                    <input
-                      type="text"
-                      name="title"
-                      required
-                      value={currentReview.title || ''}
-                      onChange={handleReviewChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Review Content *
-                    </label>
-                    <textarea
-                      name="content"
-                      required
-                      rows={3}
-                      value={currentReview.content || ''}
-                      onChange={handleReviewChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Review Images (comma-separated URLs)
-                    </label>
-                    <input
-                      type="text"
-                      name="images"
-                      value={typeof currentReview.images === 'string' ? currentReview.images : (currentReview.images?.join(', ') || '')}
-                      onChange={handleReviewChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      placeholder="https://example.com/img1.jpg, https://example.com/img2.jpg"
-                    />
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="verified"
-                      checked={currentReview.verified !== undefined ? currentReview.verified : true}
-                      onChange={handleReviewChange}
-                      className="h-4 w-4 text-[#0046be] focus:ring-[#0046be] border-gray-300 rounded"
-                    />
-                    <label className="ml-2 block text-sm text-gray-900">Verified Purchase</label>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={addReview}
-                      className="px-4 py-2 bg-[#0046be] text-white rounded-lg hover:bg-[#003494] text-sm"
-                    >
-                      {editingReviewIndex !== null ? 'Update Review' : 'Add Review'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowReviewForm(false);
-                        setEditingReviewIndex(null);
-                        setCurrentReview({
-                          id: '',
-                          author: '',
-                          avatar: '',
-                          rating: 5,
-                          date: new Date().toISOString().split('T')[0],
-                          title: '',
-                          content: '',
-                          helpful: 0,
-                          verified: true,
-                          location: '',
-                          purchaseDate: '',
-                          images: '',
-                        });
-                      }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
+        </Section>
 
-              {reviews.length > 0 && (
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 4: SEO (collapsed by default)
+        ═══════════════════════════════════════════════════════════════ */}
+        <Section id="seo" icon={Search} title="SEO Settings" description="Search engine & social sharing" defaultOpen={false}>
+          <div className="space-y-6">
+            {/* Basic SEO */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Search Engine</h4>
+              <Field label="Meta Title" hint={`${(formData.metaTitle || formData.title).length}/60 characters`}>
+                    <input
+                      type="text"
+                  value={formData.metaTitle}
+                  onChange={(e) => updateField('metaTitle', e.target.value)}
+                  placeholder={formData.title || 'Page title'}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
+              </Field>
+              <Field label="Meta Description" hint={`${formData.metaDescription.length}/160 characters`}>
+                    <textarea
+                  value={formData.metaDescription}
+                  onChange={(e) => updateField('metaDescription', e.target.value)}
+                  placeholder="Brief description for search results"
+                  rows={2}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none"
+                />
+              </Field>
+              <Field label="Keywords" hint="Comma separated">
+                    <input
+                      type="text"
+                  value={formData.metaKeywords}
+                  onChange={(e) => updateField('metaKeywords', e.target.value)}
+                  placeholder="keyword1, keyword2, keyword3"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                />
+              </Field>
+                  </div>
+
+            {/* Open Graph */}
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                <Globe className="h-4 w-4" /> Open Graph
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="OG Title">
+                  <input type="text" value={formData.metaOgTitle} onChange={(e) => updateField('metaOgTitle', e.target.value)} placeholder={formData.title} className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                </Field>
+                <Field label="OG Image URL">
+                  <input type="url" value={formData.metaOgImage} onChange={(e) => updateField('metaOgImage', e.target.value)} placeholder="https://..." className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                </Field>
+                  </div>
+              <Field label="OG Description">
+                <textarea value={formData.metaOgDescription} onChange={(e) => updateField('metaOgDescription', e.target.value)} rows={2} className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none" />
+              </Field>
+                  </div>
+
+            {/* Twitter */}
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                <Twitter className="h-4 w-4" /> Twitter Card
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Twitter Title">
+                  <input type="text" value={formData.metaTwitterTitle} onChange={(e) => updateField('metaTwitterTitle', e.target.value)} placeholder={formData.title} className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                </Field>
+                <Field label="Twitter Image URL">
+                  <input type="url" value={formData.metaTwitterImage} onChange={(e) => updateField('metaTwitterImage', e.target.value)} placeholder="https://..." className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                </Field>
+                </div>
+              <Field label="Twitter Description">
+                <textarea value={formData.metaTwitterDescription} onChange={(e) => updateField('metaTwitterDescription', e.target.value)} rows={2} className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none" />
+              </Field>
+            </div>
+          </div>
+        </Section>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 5: REVIEWS (collapsed by default)
+        ═══════════════════════════════════════════════════════════════ */}
+        <Section id="reviews" icon={Star} title="Reviews" description="Manage customer reviews" defaultOpen={false} badge={reviews.length}>
+          <div className="space-y-4">
+            {reviews.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <Star className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p>No reviews yet</p>
+              </div>
+            ) : (
                 <div className="space-y-3">
-                  {reviews.map((review, index) => (
-                    <div key={review.id || index} className="p-4 border border-gray-200 rounded-lg">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <div className="font-medium">{review.author}</div>
-                          <div className="text-sm text-gray-500">
-                            {review.date} {review.location && `• ${review.location}`}
+                {reviews.map((review, i) => (
+                  <div key={review.id || i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group">
+                    <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                      {review.author?.charAt(0)?.toUpperCase()}
                           </div>
-                          <div className="text-sm text-gray-600 mt-1">
-                            <strong>{review.title}</strong> - {review.content.substring(0, 100)}...
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900 text-sm">{review.author}</span>
+                        <div className="flex">
+                          {[1,2,3,4,5].map(s => (
+                            <Star key={s} className={`h-3 w-3 ${s <= review.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}`} />
+                          ))}
                           </div>
+                        {review.verified && <CheckCircle className="h-3 w-3 text-green-500" />}
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => editReview(index)}
-                            className="text-[#0046be] hover:text-[#003494] p-1"
-                            title="Edit review"
-                          >
-                            <Edit className="h-4 w-4" />
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">{review.content}</p>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => openReviewModal(i)} className="p-1.5 hover:bg-white rounded-lg">
+                        <Info className="h-4 w-4 text-gray-400" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => removeReview(index)}
-                            className="text-red-600 hover:text-red-900 p-1"
-                            title="Delete review"
-                          >
-                            <X className="h-4 w-4" />
+                      <button type="button" onClick={() => deleteReview(i)} className="p-1.5 hover:bg-red-50 rounded-lg">
+                        <Trash2 className="h-4 w-4 text-red-400" />
                           </button>
-                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+            
+            <button
+              type="button"
+              onClick={() => openReviewModal()}
+              className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Review
+            </button>
             </div>
+        </Section>
 
-            {/* SEO Meta Section */}
-            <div className="border-t pt-4">
-              <h2 className="text-lg font-semibold mb-4">SEO & Meta Information</h2>
-            </div>
+      </form>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meta Title
-                </label>
-                <input
-                  type="text"
-                  name="metaTitle"
-                  value={formData.metaTitle}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meta Description
-                </label>
-                <textarea
-                  name="metaDescription"
-                  rows={2}
-                  value={formData.metaDescription}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meta Keywords
-                </label>
-                <input
-                  type="text"
-                  name="metaKeywords"
-                  value={formData.metaKeywords}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                  placeholder="keyword1, keyword2, keyword3"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  OG Title
-                </label>
-                <input
-                  type="text"
-                  name="metaOgTitle"
-                  value={formData.metaOgTitle}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  OG Image URL
-                </label>
-                <input
-                  type="url"
-                  name="metaOgImage"
-                  value={formData.metaOgImage}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  OG Description
-                </label>
-                <textarea
-                  name="metaOgDescription"
-                  rows={2}
-                  value={formData.metaOgDescription}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Twitter Title
-                </label>
-                <input
-                  type="text"
-                  name="metaTwitterTitle"
-                  value={formData.metaTwitterTitle}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Twitter Image URL
-                </label>
-                <input
-                  type="url"
-                  name="metaTwitterImage"
-                  value={formData.metaTwitterImage}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Twitter Description
-                </label>
-                <textarea
-                  name="metaTwitterDescription"
-                  rows={2}
-                  value={formData.metaTwitterDescription}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0046be] focus:border-[#0046be]"
-                />
-              </div>
-            </div>
-
-            {/* Submit Buttons */}
-            <div className="border-t pt-6 flex gap-4">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-2 bg-[#0046be] text-white rounded-lg hover:bg-[#003494] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Save className="h-5 w-5" />
-                {saving ? 'Saving...' : 'Save All Changes'}
+      {/* Review Modal */}
+      {showReviewModal && editingReview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowReviewModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">{editingReview.index === -1 ? 'Add Review' : 'Edit Review'}</h3>
+              <button onClick={() => setShowReviewModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="h-5 w-5 text-gray-400" />
               </button>
-              <Link
-                href="/admin/products"
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center"
-              >
+              </div>
+            <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Author" required>
+                <input
+                  type="text"
+                    value={editingReview.data.author || ''}
+                    onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, author: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </Field>
+                <Field label="Rating">
+                  <select
+                    value={editingReview.data.rating || 5}
+                    onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, rating: parseInt(e.target.value) } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                  >
+                    {[5,4,3,2,1].map(n => <option key={n} value={n}>{n} Stars</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Title">
+                <input
+                  type="text"
+                  value={editingReview.data.title || ''}
+                  onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, title: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </Field>
+              <Field label="Content" required>
+                <textarea
+                  value={editingReview.data.content || ''}
+                  onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, content: e.target.value } })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Location">
+                <input
+                  type="text"
+                    value={editingReview.data.location || ''}
+                    onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, location: e.target.value } })}
+                    placeholder="City, State"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </Field>
+                <Field label="Date">
+                <input
+                    type="date"
+                    value={editingReview.data.date || ''}
+                    onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, date: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingReview.data.verified ?? true}
+                  onChange={(e) => setEditingReview({ ...editingReview, data: { ...editingReview.data, verified: e.target.checked } })}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Verified Purchase</span>
+              </label>
+              </div>
+            <div className="p-5 border-t border-gray-100 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowReviewModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
                 Cancel
-              </Link>
+              </button>
+              <button type="button" onClick={saveReview} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Save
+              </button>
             </div>
-          </form>
         </div>
       </div>
-    </div>
+      )}
+    </AdminLayout>
   );
 }
