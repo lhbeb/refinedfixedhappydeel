@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Package, Mail, MailCheck, MailX, Calendar, DollarSign, User, MapPin, Phone, Search, X, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Trash2, Copy } from 'lucide-react';
+import { Package, Mail, MailCheck, MailX, Calendar, DollarSign, User, MapPin, Phone, Search, X, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Trash2, Copy, Eye, ExternalLink } from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import AdminLoading from '@/components/AdminLoading';
 
@@ -503,9 +503,21 @@ export default function AdminOrdersPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500 truncate mt-0.5">
-                        {order.product_title}
-                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-sm text-gray-500 truncate flex-1">
+                          {order.product_title}
+                        </p>
+                        <Link
+                          href={`/products/${order.product_slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                          title="View product"
+                        >
+                          <Eye className="h-4 w-4 text-gray-500" />
+                        </Link>
+                      </div>
                     </div>
 
                     {/* Price & Date */}
@@ -612,7 +624,18 @@ export default function AdminOrdersPage() {
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <Package className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-gray-700">{order.product_title}</span>
+                            <span className="text-sm text-gray-700 flex-1">{order.product_title}</span>
+                            <Link
+                              href={`/products/${order.product_slug}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="View product"
+                            >
+                              <Eye className="h-3 w-3" />
+                              View Product
+                            </Link>
                           </div>
                           <div className="flex items-center gap-2">
                             <DollarSign className="h-4 w-4 text-gray-400" />
