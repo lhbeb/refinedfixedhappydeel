@@ -505,9 +505,11 @@ html, body, h1, h2, h3, h4, h5, h6, button, .font-heading, .font-sans, .font-med
   animation: bounce-x 1s infinite;
 }
 
-/* Sold Out badge - ensure maximum boldness */
+/* Sold Out badge - modern, bold design */
 .sold-out-badge {
   font-weight: 900 !important;
+  letter-spacing: 0.15em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }

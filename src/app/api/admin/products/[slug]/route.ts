@@ -126,11 +126,43 @@ export async function PATCH(
       }
     }
 
+    // Validate required fields
+    if (updates.title !== undefined && (!updates.title || updates.title.trim() === '')) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: 'Product title cannot be empty',
+          code: 'VALIDATION_ERROR'
+        },
+        { status: 400 }
+      );
+    }
+
+    if (updates.price !== undefined && (isNaN(updates.price) || updates.price < 0)) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: 'Product price must be a valid positive number',
+          code: 'VALIDATION_ERROR'
+        },
+        { status: 400 }
+      );
+    }
+
     const product = await updateProduct(slug, updates);
 
     if (!product) {
+      console.error('[PATCH /products] Update returned null:', {
+        slug,
+        updates: Object.keys(updates),
+        existing: !!existing
+      });
       return NextResponse.json(
-        { error: 'Product not found or update failed' },
+        { 
+          error: 'Update failed',
+          details: 'Product update operation returned no data. The product may not exist or the update may have failed.',
+          code: 'UPDATE_FAILED'
+        },
         { status: 404 }
       );
     }
@@ -139,9 +171,22 @@ export async function PATCH(
 
     return NextResponse.json(product);
   } catch (error) {
-    console.error('Error updating product:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error('[PATCH /products] Error updating product:', {
+      slug,
+      error: errorMessage,
+      stack: errorStack,
+      type: error?.constructor?.name
+    });
+    
     return NextResponse.json(
-      { error: 'Failed to update product' },
+      { 
+        error: 'Failed to update product',
+        details: errorMessage,
+        code: 'INTERNAL_ERROR'
+      },
       { status: 500 }
     );
   }

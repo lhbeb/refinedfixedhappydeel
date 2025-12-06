@@ -309,13 +309,33 @@ export async function updateProduct(
       .single();
 
     if (error) {
-      console.error('Error updating product:', error);
+      console.error('[updateProduct] Supabase error:', {
+        slug,
+        error: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        updateFields: Object.keys(updateData)
+      });
+      return null;
+    }
+
+    if (!data) {
+      console.error('[updateProduct] No data returned after update:', {
+        slug,
+        updateFields: Object.keys(updateData)
+      });
       return null;
     }
 
     return transformProduct(data);
   } catch (error) {
-    console.error('Error updating product:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[updateProduct] Exception:', {
+      slug,
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return null;
   }
 }

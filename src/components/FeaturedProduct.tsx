@@ -40,9 +40,9 @@ const FeaturedProduct: React.FC<FeaturedProductProps> = ({ product }) => {
                 unoptimized
               />
               {isSoldOut && (
-                <div className="absolute inset-0 bg-[rgba(0,0,0,0.382)] flex items-center justify-center">
-                  <div className="border-[3px] border-[#fcf050] rounded-lg px-7 py-2.5">
-                    <span className="sold-out-badge text-[#fcf050] text-base md:text-lg uppercase tracking-wider whitespace-nowrap">
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+                  <div className="bg-red-600 border-2 border-red-700 rounded-xl px-8 py-3.5 shadow-2xl transform rotate-[-2deg]">
+                    <span className="sold-out-badge text-white text-base md:text-lg font-black uppercase tracking-widest whitespace-nowrap drop-shadow-lg">
                       Sold Out
                     </span>
                   </div>

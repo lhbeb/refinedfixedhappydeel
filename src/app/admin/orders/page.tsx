@@ -179,21 +179,46 @@ export default function AdminOrdersPage() {
 
   const handleMarkAsConverted = async (orderId: string) => {
     setMarkingConverted(orderId);
+    setError('');
+    
     try {
-      const response = await fetch(`/api/admin/orders/${orderId}/mark-converted`, {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/mark-converted`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Failed to mark order as converted');
+        const errorMessage = data.details || data.error || `Failed to mark order as converted (${response.status})`;
+        const errorCode = data.code || 'UNKNOWN_ERROR';
+        
+        console.error('[handleMarkAsConverted] Error:', {
+          orderId,
+          status: response.status,
+          error: errorMessage,
+          code: errorCode,
+          fullResponse: data
+        });
+        
+        throw new Error(`${errorMessage}${data.code ? ` (${data.code})` : ''}`);
       }
 
       // Refresh orders to show updated status
       await fetchOrders();
       setError('');
-    } catch (err) {
-      setError('Failed to mark order as converted');
-      console.error(err);
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to mark order as converted';
+      setError(errorMessage);
+      console.error('[handleMarkAsConverted] Exception:', {
+        orderId,
+        error: err,
+        message: errorMessage
+      });
     } finally {
       setMarkingConverted(null);
     }

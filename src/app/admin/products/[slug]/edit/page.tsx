@@ -280,8 +280,30 @@ export default function EditProductPage() {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `Update failed: ${response.status} ${response.statusText}` }));
-        throw new Error(err.error || 'Update failed');
+        const err = await response.json().catch(() => ({ 
+          error: `Update failed: ${response.status} ${response.statusText}`,
+          details: `HTTP ${response.status}: ${response.statusText}`,
+          code: 'HTTP_ERROR'
+        }));
+        
+        const errorMessage = err.details || err.error || 'Update failed';
+        const errorCode = err.code || 'UNKNOWN_ERROR';
+        
+        console.error('[handleSubmit] Product update failed:', {
+          slug,
+          status: response.status,
+          error: errorMessage,
+          code: errorCode,
+          fullResponse: err,
+          updates: Object.keys({
+            slug: finalSlug,
+            title: formData.title,
+            checkout_link: formData.checkout_link,
+            // ... other fields
+          })
+        });
+        
+        throw new Error(`${errorMessage}${errorCode ? ` (${errorCode})` : ''}`);
       }
 
       setSuccess('Product saved!');
