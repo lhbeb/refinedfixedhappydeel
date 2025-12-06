@@ -34,6 +34,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let id: string | undefined;
+  
   try {
     // Check authentication
     const auth = await getAdminAuth(request);
@@ -49,7 +51,8 @@ export async function POST(
       );
     }
 
-    const { id } = await params;
+    const paramsData = await params;
+    id = paramsData.id;
     
     if (!id || typeof id !== 'string' || id.trim() === '') {
       console.error('[mark-converted] Invalid order ID:', id);
@@ -168,6 +171,7 @@ export async function POST(
     const errorStack = error instanceof Error ? error.stack : undefined;
     
     console.error('[mark-converted] Unexpected error:', {
+      orderId: id || 'unknown',
       error: errorMessage,
       stack: errorStack,
       type: error?.constructor?.name

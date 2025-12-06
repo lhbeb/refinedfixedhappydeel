@@ -200,6 +200,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  let slug: string | undefined;
+  
   try {
     // Check authentication
     const auth = await getAdminAuth(request);
@@ -207,12 +209,29 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { slug } = await params;
+    const paramsData = await params;
+    slug = paramsData.slug;
+    
+    if (!slug || typeof slug !== 'string' || slug.trim() === '') {
+      return NextResponse.json(
+        { 
+          error: 'Invalid slug',
+          details: 'Product slug is required',
+          code: 'INVALID_SLUG'
+        },
+        { status: 400 }
+      );
+    }
+    
     const success = await deleteProduct(slug);
 
     if (!success) {
       return NextResponse.json(
-        { error: 'Product not found or delete failed' },
+        { 
+          error: 'Product not found or delete failed',
+          details: `Failed to delete product with slug: ${slug}`,
+          code: 'DELETE_FAILED'
+        },
         { status: 404 }
       );
     }
@@ -221,9 +240,18 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting product:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[DELETE /products] Error deleting product:', {
+      slug: slug || 'unknown',
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.json(
-      { error: 'Failed to delete product' },
+      { 
+        error: 'Failed to delete product',
+        details: errorMessage,
+        code: 'INTERNAL_ERROR'
+      },
       { status: 500 }
     );
   }
