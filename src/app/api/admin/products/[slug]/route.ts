@@ -100,6 +100,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  let slug: string | undefined;
+  
   try {
     // Check authentication
     const auth = await getAdminAuth(request);
@@ -107,7 +109,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { slug } = await params;
+    const paramsData = await params;
+    slug = paramsData.slug;
     const existing = await getProductBySlug(slug);
 
     if (!existing) {
@@ -175,7 +178,7 @@ export async function PATCH(
     const errorStack = error instanceof Error ? error.stack : undefined;
     
     console.error('[PATCH /products] Error updating product:', {
-      slug,
+      slug: slug || 'unknown',
       error: errorMessage,
       stack: errorStack,
       type: error?.constructor?.name
