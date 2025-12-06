@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase/server';
-import { isAdmin } from '@/lib/supabase/auth';
 
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protect admin routes (except login)
@@ -15,36 +13,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
 
-    try {
-      // Verify the token
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-
-      if (error || !user) {
-        // Invalid token, redirect to login
-        const response = NextResponse.redirect(new URL('/admin/login', request.url));
-        response.cookies.delete('admin_token');
-        return response;
-      }
-
-      // Check if user is admin
-      const adminStatus = await isAdmin(user.email || '');
-      if (!adminStatus) {
-        // Not an admin, redirect to login
-        const response = NextResponse.redirect(new URL('/admin/login', request.url));
-        response.cookies.delete('admin_token');
-        return response;
-      }
-
-      // Authenticated admin, allow access
-      const response = NextResponse.next();
-      response.headers.set('x-pathname', pathname);
-      return response;
-    } catch (error) {
-      // Error verifying token, redirect to login
-      const response = NextResponse.redirect(new URL('/admin/login', request.url));
-      response.cookies.delete('admin_token');
-      return response;
-    }
+    // Token exists - let the page/API handle actual verification
+    // This keeps middleware Edge-compatible (no Node.js APIs)
+    const response = NextResponse.next();
+    response.headers.set('x-pathname', pathname);
+    return response;
   }
 
   // For non-admin routes, just add pathname header
